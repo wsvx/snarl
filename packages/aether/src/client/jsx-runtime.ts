@@ -212,6 +212,33 @@ function applyAttribute(el: HTMLElement | SVGElement, key: string, value: unknow
 	el.setAttribute(key, value === true ? "" : String(value));
 }
 
+const TWO_WAY_EVENT: Record<string, string> = {
+	value: "input",
+	input: "input",
+	valueAsNumber: "input",
+	"value-as-number": "input",
+	valueAsDate: "input",
+	"value-as-date": "input",
+	checked: "change",
+};
+
+const describeCounters = new Map<string, number>();
+
+function describeElement(el: Element): string {
+	const tag = el.tagName.toLowerCase();
+	const id = el.getAttribute("id");
+
+	if (id) return `<${tag} id="${id}">`;
+
+	const name = el.getAttribute("name");
+	if (name) return `<${tag} name="${name}">`;
+
+	const seen = (describeCounters.get(tag) ?? 0) + 1;
+	describeCounters.set(tag, seen);
+
+	return `<${tag}> (#${seen} of this tag encountered so far. add an id to pin this down precisely)`;
+}
+
 function bindProp(el: HTMLElement, key: string, value: unknown): void {
 	if (value == null) return;
 
@@ -234,7 +261,9 @@ function bindProp(el: HTMLElement, key: string, value: unknown): void {
 			el.addEventListener("change", handler);
 		} else {
 			console.warn(
-				`aether: bind:${prop} strictly expects a Signal. Use ${prop}={() => ...} for getters.`,
+				`aether: bind:${prop} on ${
+					describeElement(el)
+				} strictly expects a Signal. Use ${prop}={() => ...} for getters.`,
 			);
 		}
 		return;
@@ -247,20 +276,13 @@ function bindProp(el: HTMLElement, key: string, value: unknown): void {
 	applyAttribute(el, key, value);
 }
 
-const TWO_WAY_EVENT: Record<string, string> = {
-	value: "input",
-	input: "input",
-	valueAsNumber: "input",
-	"value-as-number": "input",
-	valueAsDate: "input",
-	"value-as-date": "input",
-	checked: "change",
-};
-
 function bindTwoWay(el: HTMLElement | SVGElement, prop: string, accessor: unknown): void {
 	if (!isSignal(accessor)) {
 		console.warn(
-			`aether: bind:${prop} expects a signal (from \`signal()\`), got ${typeof accessor}`,
+			`aether: bind:${prop} on ${
+				describeElement(el)
+			} expects a signal (from \`signal()\`), got ${typeof accessor}. ` +
+				`Use ${prop}={someComputed} for a read-only reactive value, or wrap your value in \`signal()\` first.`,
 		);
 		if (accessor != null) applyAttribute(el, prop, accessor);
 		return;
@@ -269,7 +291,9 @@ function bindTwoWay(el: HTMLElement | SVGElement, prop: string, accessor: unknow
 
 	if (prop === "group") {
 		if (!(el instanceof HTMLInputElement) || el.type !== "radio") {
-			console.warn('aether: bind:group only supports <input type="radio">');
+			console.warn(
+				`aether: bind:group on ${describeElement(el)} only supports <input type="radio">`,
+			);
 			return;
 		}
 		effect(() => void (el.checked = String(sig()) === el.value));
@@ -279,7 +303,13 @@ function bindTwoWay(el: HTMLElement | SVGElement, prop: string, accessor: unknow
 
 	const eventName = TWO_WAY_EVENT[prop];
 	if (!eventName) {
-		console.warn(`aether: bind:${prop} is not a supported two-way binding target`);
+		console.warn(
+			`aether: bind:${prop} on ${
+				describeElement(el)
+			} is not a supported two-way binding target. Supported: ${
+				Object.keys(TWO_WAY_EVENT).join(", ")
+			}, group.`,
+		);
 		return;
 	}
 
