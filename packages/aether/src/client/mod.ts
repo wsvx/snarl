@@ -45,9 +45,21 @@ function mountOne(el: HTMLElement): void {
 	}
 
 	let result: Node | Node[] | null = null;
-	const dispose = effectScope(() => {
-		result = component(parseProps(el));
-	});
+	let dispose: (() => void) | undefined;
+
+	try {
+		dispose = effectScope(() => {
+			result = component(parseProps(el));
+		});
+	} catch (err) {
+		console.error(
+			`aether: island "${name}" threw during hydration and was skipped. ` +
+				`Its server-rendered markup is left in place but will not be interactive. ` +
+				`Other islands on this page are unaffected.`,
+			err,
+		);
+		return;
+	}
 
 	scopes.set(el, dispose);
 	el.replaceChildren(...(result == null ? [] : Array.isArray(result) ? result : [result]));
