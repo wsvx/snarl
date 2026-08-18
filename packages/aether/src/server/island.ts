@@ -57,6 +57,16 @@ export function island<P extends Record<string, unknown>>(
 	return IslandWrapper;
 }
 
+const KNOWN_NON_SERIALISABLE = [
+	[Set, "Set"],
+	[Map, "Map"],
+	[RegExp, "RegExp"],
+	[WeakMap, "WeakMap"],
+	[WeakSet, "WeakSet"],
+	[ArrayBuffer, "ArrayBuffer"],
+	[Promise, "Promise"],
+] as const;
+
 function assertSerialisableProps(id: string, props: Record<string, unknown>): void {
 	const seen = new WeakSet<object>();
 
@@ -69,6 +79,12 @@ function assertSerialisableProps(id: string, props: Record<string, unknown>): vo
 			typeof value === "boolean"
 		) {
 			return;
+		}
+
+		if (typeof value === "bigint" || typeof value === "symbol") {
+			throw new Error(
+				`aether: island "${id}" prop "${path}" has unsupported type ${typeof value}`,
+			);
 		}
 
 		if (typeof value === "function") {
@@ -89,10 +105,17 @@ function assertSerialisableProps(id: string, props: Record<string, unknown>): vo
 			);
 		}
 
+		for (const [ctor, label] of KNOWN_NON_SERIALISABLE) {
+			if (value instanceof ctor) {
+				throw new Error(
+					`aether: island "${id}" prop "${path}" is a ${label}, which serializes to "{}" and ` +
+						`silently loses its data. convert it before passing it to the island`,
+				);
+			}
+		}
 		if (isJsxElement(value)) {
 			throw new Error(
-				`aether: island "${id}" prop "${path}" is JSX. ` +
-					`Islands cannot receive JSX children/props unless you implement serialisable slots.`,
+				`aether: island "${id}" prop "${path}" is JSX.`,
 			);
 		}
 
