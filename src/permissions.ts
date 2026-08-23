@@ -54,16 +54,19 @@ export async function preflightPermissions(
 	log.warn(message);
 }
 
+const DESCRIBERS: {
+	[K in Deno.PermissionName]?: (d: Extract<Deno.PermissionDescriptor, { name: K }>) => string;
+} = {
+	read: (d) => `filesystem read${"path" in d && d.path ? ` (${d.path})` : ""}`,
+	write: (d) => `filesystem write${"path" in d && d.path ? ` (${d.path})` : ""}`,
+	net: (d) => `network${"host" in d && d.host ? ` (${d.host})` : ""}`,
+	run: (d) => `run command${"command" in d && d.command ? ` (${d.command})` : ""}`,
+	env: (d) =>
+		`access environment variables${"variable" in d && d.variable ? ` (${d.variable})` : ""}`,
+};
+
 function describe(d: Deno.PermissionDescriptor): string {
-	if (d.name === "read" || d.name === "write") {
-		return `filesystem ${d.name}${"path" in d ? ` (${d.path})` : ""}`;
-	}
-	if (d.name === "net") return `network${"host" in d && d.host ? ` (${d.host})` : ""}`;
-	if (d.name === "run") return `run command${"command" in d ? ` (${d.command})` : ""}`;
-	if (d.name === "env") {
-		return `access environment variables${"variable" in d ? ` (${d.variable})` : ""}`;
-	}
-	return d.name;
+	return DESCRIBERS[d.name as Deno.PermissionName]?.(d as never) ?? d.name;
 }
 
 function dedupe(reqs: PermissionRequirement[]): PermissionRequirement[] {
