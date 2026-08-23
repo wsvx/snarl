@@ -12,19 +12,24 @@ import type { RootRouteMetadata, ScanEntry } from "./types.ts";
 import { walk } from "@std/fs";
 import { log } from "@july/snarl/verbosity";
 
-async function importRoute(base: string, file: string): Promise<ScanEntry> {
+async function importRoute(base: string, file: string): Promise<ScanEntry | null> {
 	const rel = file.slice(base.length + 1);
 	const start = performance.now();
 
-	const module = await import(toFileUrl(file).href);
-	log.info("router", dim(`↓ imported ${rel} in ${(performance.now() - start).toFixed(2)}ms`));
+	try {
+		const module = await import(toFileUrl(file).href);
+		log.info("router", dim(`↓ imported ${rel} in ${(performance.now() - start).toFixed(2)}ms`));
 
-	return {
-		path: makeRoutePath(rel),
-		fsPath: file,
-		module,
-		depth: rel.split(SEPARATOR).filter(Boolean).length - 1,
-	};
+		return {
+			path: makeRoutePath(rel),
+			fsPath: file,
+			module,
+			depth: rel.split(SEPARATOR).filter(Boolean).length - 1,
+		};
+	} catch (err) {
+		log.error("router", `failed to import route ${dim(rel)}:`, err);
+		return null;
+	}
 }
 
 function isRouteFile(name: string): boolean {
@@ -81,5 +86,5 @@ export async function scanDir(
 		routes.map((file) => importRoute(base, file)),
 	);
 
-	entries.push(...importedRoutes);
+	entries.push(...importedRoutes.filter(($): $ is ScanEntry => $ !== null));
 }
