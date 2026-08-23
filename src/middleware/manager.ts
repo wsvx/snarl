@@ -83,7 +83,7 @@ export class MiddlewareManager {
 			);
 		}
 
-		const def = this.#normalize(entry);
+		const def = this.#normalise(entry);
 		const existing = this.#defs.get(def.name);
 		if (existing) {
 			if (existing === def) return this;
@@ -109,7 +109,7 @@ export class MiddlewareManager {
 		}
 	}
 
-	#normalize(entry: MiddlewareLike): MiddlewareDefinition {
+	#normalise(entry: MiddlewareLike): MiddlewareDefinition {
 		if (typeof entry === "function") {
 			return {
 				name: `anonymous#${this.#anon++}`,

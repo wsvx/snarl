@@ -36,9 +36,9 @@ function resolveContentType(
 	overrides?: CustomContentTypes,
 ): string | undefined {
 	if (overrides) {
-		const normalized = ext.toLowerCase();
-		const withoutDot = normalized.startsWith(".") ? normalized.slice(1) : normalized;
-		const withDot = normalized.startsWith(".") ? normalized : `.${normalized}`;
+		const norm = ext.toLowerCase();
+		const withoutDot = norm.startsWith(".") ? norm.slice(1) : norm;
+		const withDot = norm.startsWith(".") ? norm : `.${norm}`;
 
 		if (withDot in overrides) return overrides[withDot];
 		if (withoutDot in overrides) return overrides[withoutDot];
