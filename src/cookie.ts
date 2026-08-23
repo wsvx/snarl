@@ -154,7 +154,7 @@ export function deleteCookie(
 	name: string,
 	options?: Omit<CookieOptions, "expires" | "maxAge">,
 ): string {
-	return serializeCookie(name, "", {
+	return serialiseCookie(name, "", {
 		...options,
 		expires: new Date(0),
 		maxAge: 0,
@@ -282,7 +282,7 @@ export class CookieJar {
 	set(name: string, value: string, options?: CookieOptions): void {
 		this.ensureParsed()[name] = value;
 		this.setCookieHeaders = this.setCookieHeaders.filter((h) => !h.startsWith(`${name}=`));
-		this.setCookieHeaders.push(serializeCookie(name, value, options));
+		this.setCookieHeaders.push(serialiseCookie(name, value, options));
 	}
 
 	/**

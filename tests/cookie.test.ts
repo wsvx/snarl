@@ -5,7 +5,7 @@
  */
 
 import { assertEquals, assertNotEquals } from "@std/assert";
-import { CookieJar, deleteCookie, parseCookies, serializeCookie } from "@july/snarl";
+import { CookieJar, deleteCookie, parseCookies, serialiseCookie } from "@july/snarl";
 
 Deno.test("parseCookies", async (t) => {
 	await t.step("parses simple pairs", () => {
@@ -37,21 +37,21 @@ Deno.test("parseCookies", async (t) => {
 
 Deno.test("serializeCookie", async (t) => {
 	await t.step("defaults: Secure, HttpOnly, SameSite=Lax", () => {
-		assertEquals(serializeCookie("s", "v"), "s=v; Secure; HttpOnly; SameSite=Lax");
+		assertEquals(serialiseCookie("s", "v"), "s=v; Secure; HttpOnly; SameSite=Lax");
 	});
 	await t.step("URL-encodes the value", () => {
-		assertEquals(serializeCookie("s", "a b"), "s=a%20b; Secure; HttpOnly; SameSite=Lax");
+		assertEquals(serialiseCookie("s", "a b"), "s=a%20b; Secure; HttpOnly; SameSite=Lax");
 	});
 	await t.step("secure: false omits Secure", () => {
-		assertEquals(serializeCookie("s", "v", { secure: false }).includes("Secure"), false);
+		assertEquals(serialiseCookie("s", "v", { secure: false }).includes("Secure"), false);
 	});
 	await t.step("httpOnly: false omits HttpOnly", () => {
-		assertEquals(serializeCookie("s", "v", { httpOnly: false }).includes("HttpOnly"), false);
+		assertEquals(serialiseCookie("s", "v", { httpOnly: false }).includes("HttpOnly"), false);
 	});
 	await t.step("expires renders UTC string", () => {
 		const d = new Date("2026-06-01T00:00:00Z");
 		assertEquals(
-			serializeCookie("s", "v", { expires: d, secure: false, httpOnly: false }).includes(
+			serialiseCookie("s", "v", { expires: d, secure: false, httpOnly: false }).includes(
 				"Expires=Mon, 01 Jun 2026",
 			),
 			true,
@@ -59,14 +59,14 @@ Deno.test("serializeCookie", async (t) => {
 	});
 	await t.step("maxAge renders exactly, including 0", () => {
 		assertEquals(
-			serializeCookie("s", "v", { maxAge: 0, secure: false, httpOnly: false }).includes(
+			serialiseCookie("s", "v", { maxAge: 0, secure: false, httpOnly: false }).includes(
 				"Max-Age=0",
 			),
 			true,
 		);
 	});
 	await t.step("domain and path render when present", () => {
-		const out = serializeCookie("s", "v", {
+		const out = serialiseCookie("s", "v", {
 			domain: "example.com",
 			path: "/api",
 			secure: false,
@@ -77,26 +77,26 @@ Deno.test("serializeCookie", async (t) => {
 	});
 	await t.step("sameSite: explicit value overrides default", () => {
 		assertEquals(
-			serializeCookie("s", "v", { sameSite: "Strict", secure: false, httpOnly: false }).includes(
+			serialiseCookie("s", "v", { sameSite: "Strict", secure: false, httpOnly: false }).includes(
 				"SameSite=Strict",
 			),
 			true,
 		);
 	});
 	await t.step("sameSite: empty string omits the attribute entirely", () => {
-		const out = serializeCookie("s", "v", { sameSite: "" as any, secure: false, httpOnly: false });
+		const out = serialiseCookie("s", "v", { sameSite: "" as any, secure: false, httpOnly: false });
 		assertEquals(out.includes("SameSite"), false);
 	});
 	await t.step("sameSite: undefined falls back to Lax", () => {
 		assertEquals(
-			serializeCookie("s", "v", { sameSite: undefined, secure: false, httpOnly: false }).includes(
+			serialiseCookie("s", "v", { sameSite: undefined, secure: false, httpOnly: false }).includes(
 				"SameSite=Lax",
 			),
 			true,
 		);
 	});
 	await t.step("prefix 'host': forces __Host- name, Path=/, Secure, forbids Domain", () => {
-		const out = serializeCookie("s", "v", { prefix: "host", domain: "example.com", path: "/x" });
+		const out = serialiseCookie("s", "v", { prefix: "host", domain: "example.com", path: "/x" });
 		assertEquals(out.startsWith("__Host-s="), true);
 		assertEquals(out.includes("Path=/"), true);
 		assertEquals(out.includes("Secure"), true);
@@ -105,7 +105,7 @@ Deno.test("serializeCookie", async (t) => {
 	await t.step(
 		"prefix 'secure': forces __Secure- name and Secure, leaves other options alone",
 		() => {
-			const out = serializeCookie("s", "v", { prefix: "secure", path: "/x", httpOnly: false });
+			const out = serialiseCookie("s", "v", { prefix: "secure", path: "/x", httpOnly: false });
 			assertEquals(out.startsWith("__Secure-s="), true);
 			assertEquals(out.includes("Secure"), true);
 			assertEquals(out.includes("Path=/x"), true);
