@@ -26,8 +26,10 @@ export interface SignalNode<T = unknown> extends ReactiveNode {
 }
 
 export interface Signal<T> extends ReactiveAccessor<T> {
-	(): T;
 	(value: T): void;
+	(): T;
+
+	set(value: T): void;
 
 	/** Updates from the current value in one step. `count.update(n => n + 1)` instead of `count(count() + 1)` */
 	update(fn: (current: T) => T): void;
@@ -70,6 +72,8 @@ export function signal<T>(initialValue?: T): Signal<T | undefined> {
 
 	accessor.update = (fn) => writeSignal(node, fn(node.currentValue));
 	accessor.map = (fn) => computed(() => fn(readSignal(node)));
+
+	accessor.set = (v) => accessor(v);
 
 	accessor[Symbol.toPrimitive] = (hint: string) => {
 		const v = readSignal(node);
