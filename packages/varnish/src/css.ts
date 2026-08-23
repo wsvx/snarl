@@ -5,21 +5,20 @@
  */
 
 import { chain, Context, Middleware, MiddlewarePriority, provideMiddleware } from "@july/snarl";
-import { splitDoctype } from "./html.ts";
+import { injectIntoHead } from "./injection.ts";
+
+const CSS_ROUTE_RE = /^\/_css\/([a-zA-Z0-9_-]+)\.css$/;
+const CONTEXT = Symbol.for("varnish.context");
 
 /** hash -> compiled scoped CSS content, populated at module load time */
 export const styleRegistry: Map<string, string> = new Map();
-
-/** per-request set of style hashes marked as used, keyed by request Context */
-export const contextualisedStyles: WeakMap<Context<any>, Set<string>> = new WeakMap();
 
 /**
  * marks a style hash as used for the given request, so `styleScopeInjection()`
  * will emit a `<link>` for it
  */
 export function markStyleUsed(ctx: Context<any>, hash: string): void {
-	let set = contextualisedStyles.get(ctx);
-	if (!set) contextualisedStyles.set(ctx, set = new Set());
+	const set = ctx.state.getOrInsertComputed(CONTEXT, () => new Set()) as Set<string>;
 	set.add(hash);
 }
 
@@ -31,12 +30,10 @@ export function markStyleUsed(ctx: Context<any>, hash: string): void {
  */
 export function scopedCss(): Middleware {
 	return (ctx, next) => {
-		const { pathname } = ctx.url;
-		if (!pathname.startsWith("/_css/") || !pathname.endsWith(".css")) {
-			return next();
-		}
+		const match = CSS_ROUTE_RE.exec(ctx.url.pathname);
+		if (!match) return next();
 
-		const hash = pathname.slice("/_css/".length, -".css".length);
+		const hash = match[1];
 		const content = styleRegistry.get(hash);
 
 		if (!content) return next();
@@ -50,23 +47,6 @@ export function scopedCss(): Middleware {
 	};
 }
 
-export function injectScopedStylesheet(ctx: Context, input: string): string | undefined {
-	const used = contextualisedStyles.get(ctx);
-	if (!used?.size) return;
-
-	let links = "";
-	for (const hash of used) links += `<link rel="stylesheet" href="/_css/${hash}.css">`;
-
-	const headClose = "</head>";
-	const idx = input.indexOf(headClose);
-	if (idx !== -1) {
-		return input.slice(0, idx) + links + headClose + input.slice(idx + headClose.length);
-	}
-
-	const { doctype, rest } = splitDoctype(input);
-	return doctype + links + rest;
-}
-
 /**
  * injects `<link rel="stylesheet">` tags for every scoped style marked
  * as used during this request (via `markStyleUsed`).
@@ -75,24 +55,19 @@ export function injectScopedStylesheet(ctx: Context, input: string): string | un
  */
 export function styleScopeInjection(): Middleware {
 	return async (ctx, next) => {
-		const res = await next();
+		const response = await next();
 
-		const contentType = res.headers.get("Content-Type") ?? "";
-		if (!contentType.includes("text/html")) return res;
+		const contentType = response.headers.get("Content-Type") ?? "";
+		if (!response.body || !contentType.includes("text/html")) return response;
 
-		const html = await res.text();
-		if (!html) return res;
+		const used = ctx.state.get(CONTEXT) as Set<string> | undefined;
+		if (!used || used.size === 0) return response;
 
-		const injected = injectScopedStylesheet(ctx, html);
-
-		const headers = new Headers(res.headers);
-		headers.delete("Content-Length");
-
-		return new Response(injected, {
-			status: res.status,
-			statusText: res.statusText,
-			headers,
-		});
+		let links = "";
+		for (const hash of used) {
+			links += `<link rel="stylesheet" href="/_css/${hash}.css">\n`;
+		}
+		return injectIntoHead(ctx, links), response;
 	};
 }
 

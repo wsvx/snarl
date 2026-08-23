@@ -9,7 +9,6 @@ import type { Context, JSX } from "@july/snarl";
 import { markStyleUsed, scopeCss, styleRegistry } from "@404/varnish";
 import { getContext } from "./context.ts";
 import { boring } from "./hash/mod.ts";
-import { log } from "@july/snarl/verbosity";
 
 export interface Css {
 	/**
@@ -97,24 +96,11 @@ function createComponent(tag: string, scope: string): ScopedComponent {
 	};
 }
 
-function registerScope(scope: string, compiled: string, overwrite: boolean = false): string {
-	let existing = styleRegistry.get(scope);
-	let attempts = 0;
+function registerScope(scope: string, compiled: string): string {
+	const existing = styleRegistry.get(scope);
 
-	while (!overwrite && existing !== undefined && existing !== compiled) {
-		if (attempts++ == 5) {
-			if (Deno.env.get("ENV") !== "production") {
-				log.error("@july/twist", `css scope collision on "${scope}"`);
-			}
-			break;
-		}
-
-		const count = 6 + (attempts * 2);
-		const bytes = new Uint8Array(count / 2);
-		crypto.getRandomValues(bytes);
-
-		scope = bytes.toHex() + scope.slice(8);
-		existing = styleRegistry.get(scope);
+	if (existing !== undefined && existing !== compiled) {
+		throw new Error(`imouto: CSS hash collision detected for scope "${scope}"`);
 	}
 
 	styleRegistry.set(scope, compiled);
@@ -123,13 +109,13 @@ function registerScope(scope: string, compiled: string, overwrite: boolean = fal
 
 function createStyledComponent(tag: string, src: string, scope: string): ScopedComponent {
 	const shouldIgnore = tag === "html" || tag === "body" || tag === "head";
-	registerScope(scope, scopeCss(src, shouldIgnore ? "" : `.${scope}`), true);
+	registerScope(scope, scopeCss(src, shouldIgnore ? "" : `.${scope}`));
 	return createComponent(tag, scope);
 }
 
 function createScopedStyles(src: string, hashFn: CssConfig["hash"]): ScopedStyleSheet {
 	let scope = hashFn(src);
-	scope = registerScope(scope, scopeCss(src, `.${scope}`), true);
+	scope = registerScope(scope, scopeCss(src, `.${scope}`));
 
 	const styledFactory = new Proxy({} as StyledFactory, {
 		get(_target, property: string) {
@@ -203,7 +189,15 @@ export function createStyles(
 	return { css: cssTag, styled };
 }
 
-const defaultCss: ReturnType<typeof createStyles> = createStyles();
+let defaultHash: CssConfig["hash"] = boring;
+let cachedInstance = createStyles({ hash: defaultHash });
 
-export const css = defaultCss.css;
-export const styled = defaultCss.styled;
+export function configureDefaultCss(config: Partial<CssConfig>): void {
+	if (config.hash) defaultHash = config.hash;
+	cachedInstance = createStyles({ hash: defaultHash });
+}
+
+export const css: CssTag = (strings, ...values) => cachedInstance.css(strings, ...values);
+export const styled: StyledFactory = new Proxy({} as StyledFactory, {
+	get: (_t, prop: string) => cachedInstance.styled[prop as keyof StyledFactory],
+});

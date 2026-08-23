@@ -18,9 +18,8 @@ import {
 	MiddlewarePriority,
 	staticFiles,
 } from "@july/snarl";
-import { context, minify, scanRoutes } from "./mod.ts";
-import { collectHeadContent, injectIntoHead } from "./head.ts";
-import { injectScopedStylesheet, scopedCss } from "@404/varnish";
+import { scanRoutes } from "./mod.ts";
+import { htmlInjection } from "@404/varnish";
 import { dim } from "@std/fmt/colors";
 import { log } from "@july/snarl/verbosity";
 import { preflightPermissions } from "@july/snarl";
@@ -44,35 +43,6 @@ const DEFAULT_APP_OPTIONS: Required<Omit<AppOptions, "logger" | "env">> = {
 	maxAge: 3600,
 	verbose: true,
 };
-
-export function transform(mini: Awaited<ReturnType<typeof minify>>): Middleware {
-	return async (ctx, next) => {
-		const response = await next();
-
-		if (!response.body) return response;
-		if (response.status === 204 || response.status === 304) return response;
-
-		const contentType = response.headers.get("Content-Type") ?? "";
-		if (!contentType.includes("text/html")) return response;
-
-		let html = await response.text() ?? "";
-
-		const head = collectHeadContent(ctx);
-		if (head) {
-			html = injectIntoHead(html, head.content && await head.content, head.attrs);
-		}
-		html = mini.perform(injectScopedStylesheet(ctx, html) ?? html, false);
-
-		const headers = new Headers(response.headers);
-		headers.delete("Content-Length");
-
-		return new Response(html, {
-			status: response.status,
-			statusText: response.statusText,
-			headers,
-		});
-	};
-}
 
 export async function createApp(
 	options: AppOptions = {},
@@ -109,8 +79,14 @@ export async function createApp(
 	};
 
 	router.use(
-		context(),
-		scopedCss(),
+		"context",
+		"scoped-css",
+		"head",
+		{
+			name: "html-injection",
+			priority: MiddlewarePriority.early,
+			factory: () => htmlInjection(),
+		},
 		{
 			name: "static-files",
 			permissions: [{
@@ -119,13 +95,6 @@ export async function createApp(
 			}],
 			factory: () => staticFiles(staticDir, { maxAge, immutable: immutableStatic }),
 		},
-		{
-			name: "html-transform",
-			priority: 600,
-			dependencies: ["context"],
-			factory: async () => transform(await minify()),
-		},
-		logger(),
 	);
 
 	if (options.logger !== false) {
