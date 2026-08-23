@@ -8,7 +8,7 @@ import { type JSX, jsx } from "@july/snarl/jsx-runtime";
 import { type IslandMeta, markIslandUsed } from "./registry.ts";
 import { isJsxElement } from "@july/snarl";
 import { effectScope, isReactive } from "../reactivity/mod.ts";
-import { isBrowser } from "../env.ts";
+import { isPromiseLike } from "../promise.ts";
 
 export interface IslandWrapperOptions {
 	/** wrapper element tag around the hydration marker. defaults to "div" */
@@ -29,23 +29,20 @@ export function island<P extends Record<string, unknown>>(
 
 	function IslandWrapper(props: P): JSX.Element {
 		props ??= {} as P;
+		const { children, ...serialisable } = props as Record<string, unknown>;
 
-		assertSerialisableProps(meta.id, props);
+		assertSerialisableProps(meta.id, serialisable);
 		markIslandUsed(meta.id);
 
-		let children: JSX.Node;
-		if (isBrowser) {
-			children = Component(props);
-		} else {
-			effectScope(() => {
-				children = Component(props);
-			})();
-		}
+		const rendered = Component(props);
+		const slot = children != null
+			? jsx("template", { "data-x-slot": "", children: children as JSX.Node })
+			: null;
 
 		return jsx(tag, {
 			"data-x-id": meta.id,
-			"data-x-props": JSON.stringify(props ?? {}),
-			children,
+			"data-x-props": JSON.stringify(serialisable),
+			children: [slot, rendered],
 		});
 	}
 
@@ -115,7 +112,8 @@ function assertSerialisableProps(id: string, props: Record<string, unknown>): vo
 		}
 		if (isJsxElement(value)) {
 			throw new Error(
-				`aether: island "${id}" prop "${path}" is JSX.`,
+				`aether: island "${id}" prop "${path}" is JSX. only "children" can carry JSX into an ` +
+					`island.`,
 			);
 		}
 
@@ -136,12 +134,6 @@ function assertSerialisableProps(id: string, props: Record<string, unknown>): vo
 	}
 
 	for (const key of Object.keys(props)) {
-		if (key === "children" && props[key] != null) {
-			throw new Error(
-				`aether: island "${id}" received children. Island children must be serialisable props, not JSX.`,
-			);
-		}
-
 		visit(key, props[key]);
 	}
 }

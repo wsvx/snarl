@@ -4,7 +4,9 @@
  * SPDX-License-Identifier: MPL-2.0
  */
 
+import { isPromiseLike } from "../promise.ts";
 import { effectScope } from "../reactivity/mod.ts";
+import { renderAsyncSlot } from "./async-slot.ts";
 
 export type IslandComponent<P = Record<string, unknown>> = (props: P) => Node | Node[] | null;
 
@@ -32,6 +34,26 @@ function parseProps(el: HTMLElement): Record<string, unknown> {
 	}
 }
 
+function extractSlotChildren(el: HTMLElement): Node[] | undefined {
+	const children = el.children;
+	const len = children.length;
+
+	let template: HTMLTemplateElement | undefined;
+
+	for (let i = 0; i < len; i++) {
+		const child = children[i];
+		if (child.tagName === "TEMPLATE" && child.hasAttribute("data-x-slot")) {
+			template = child as HTMLTemplateElement;
+			break;
+		}
+	}
+
+	if (!template) return undefined;
+
+	const nodes = [...template.content.childNodes];
+	return template.remove(), nodes;
+}
+
 function mountOne(el: HTMLElement): void {
 	const name = el.dataset.xId;
 	if (!name) return;
@@ -44,31 +66,71 @@ function mountOne(el: HTMLElement): void {
 		return;
 	}
 
-	let result: Node | Node[] | null = null;
+	const slotChildren = extractSlotChildren(el);
+	const props = parseProps(el);
+	if (slotChildren !== undefined) props.children = slotChildren;
+
+	let result: Node | Node[] | Promise<Node | Node[] | null> | null = null;
 	let dispose: (() => void) | undefined;
 
 	try {
 		dispose = effectScope(() => {
-			result = component(parseProps(el));
+			result = component(props);
 		});
 	} catch (err) {
-		console.error(
+		return console.error(
 			`aether: island "${name}" threw during hydration and was skipped. ` +
 				`Its server-rendered markup is left in place but will not be interactive. ` +
 				`Other islands on this page are unaffected.`,
 			err,
 		);
-		return;
 	}
 
-	scopes.set(el, dispose);
-	el.replaceChildren(...(result == null ? [] : Array.isArray(result) ? result : [result]));
+	const controller = new AbortController();
+	const promiseLike = isPromiseLike(result);
+	const settled: Promise<unknown> = promiseLike
+		? result as unknown as Promise<unknown>
+		: Promise.resolve();
+	const $dispose = () => {
+		controller.abort();
+		settled.finally(dispose).catch(() => {});
+	};
+	scopes.set(el, $dispose);
+
+	if (promiseLike) {
+		const slot = renderAsyncSlot(result, {
+			signal: controller.signal,
+			onError: (err) => {
+				console.error(`aether: island "${name}"'s async render rejected:`, err);
+				return undefined;
+			},
+		});
+		el.replaceChildren(slot);
+	} else {
+		const resolved = result as Node | Node[] | null;
+		el.replaceChildren(
+			...(resolved == null ? [] : Array.isArray(resolved) ? resolved : [resolved]),
+		);
+	}
+
 	el.removeAttribute("data-x-id");
 }
 
 /** hydrates every unhydrated `[data-x-id]` element under `root` with a registered island */
 export function mount(root: ParentNode = document): void {
-	for (const el of root.querySelectorAll<HTMLElement>("[data-x-id]")) mountOne(el);
+	const targets: HTMLElement[] = [];
+	const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+
+	let node: Node | null;
+	while ((node = walker.nextNode())) {
+		if ((node as HTMLElement).hasAttribute("data-x-id")) {
+			targets.push(node as HTMLElement);
+		}
+	}
+
+	for (let i = 0; i < targets.length; i++) {
+		mountOne(targets[i]);
+	}
 }
 
 /** disposes an island's reactive scope and clears its root. no-op if never mounted */
