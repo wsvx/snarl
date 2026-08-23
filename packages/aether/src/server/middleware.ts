@@ -18,13 +18,14 @@ import { boring } from "@404/aether";
 
 const BUNDLE_CACHE = new Map<string, string>();
 const HASH_BY_NAMESET = new Map<string, string>();
+const PENDING_BUNDLES = new Map<string, Promise<{ code: string; hash: string }>>();
 
 export interface AetherOptions extends AetherServeOptions {
 	/** directories or files to analyse for interactive components */
 	entrypoints?: string[];
 }
 
-async function resolveBundle(
+function resolveBundle(
 	names: readonly string[],
 	options: AetherOptions,
 	cache: Map<string, string>,
@@ -34,16 +35,24 @@ async function resolveBundle(
 	const knownHash = HASH_BY_NAMESET.get(nameSetKey);
 	if (knownHash) {
 		const cached = cache.get(knownHash);
-		if (cached !== undefined) return { code: cached, hash: knownHash };
+		if (cached !== undefined) return Promise.resolve({ code: cached, hash: knownHash });
 	}
 
-	const code = await bundleIslands(names, options);
-	const hash = boring(code);
+	return PENDING_BUNDLES.getOrInsertComputed(nameSetKey, async () => {
+		try {
+			const code = await bundleIslands(names, options);
+			const hash = boring(code);
 
-	cache.set(hash, code);
-	HASH_BY_NAMESET.set(nameSetKey, hash);
+			cache.set(hash, code);
+			HASH_BY_NAMESET.set(nameSetKey, hash);
+			PENDING_BUNDLES.delete(nameSetKey);
 
-	return { code, hash };
+			return { code, hash };
+		} catch (err) {
+			PENDING_BUNDLES.delete(nameSetKey);
+			throw err;
+		}
+	});
 }
 
 async function injectIslandScript(
@@ -95,7 +104,7 @@ async function injectIslandScript(
 }
 
 const CACHE_CONTROL_IMMUTABLE = "public, max-age=31536000, immutable";
-const ENTRY_ROUTE_RE = /^\/_aether\/entry\/([^.]*)\.([0-9a-z]+)\.js$/;
+const ENTRY_ROUTE_RE = /^\/_aether\/entry\/([A-Za-z0-9_-]+)\.([0-9a-z]+)\.js$/;
 
 export function aether(options: AetherOptions = {}): Middleware {
 	const cache = options.cache ?? BUNDLE_CACHE;
@@ -105,12 +114,10 @@ export function aether(options: AetherOptions = {}): Middleware {
 	}
 
 	return async (ctx, next) => {
-		const { pathname } = ctx.url;
+		const match = ctx.url.pathname.match(ENTRY_ROUTE_RE);
 
-		const match = pathname.match(ENTRY_ROUTE_RE);
 		if (match) {
 			const [, encodedNames, requestedHash] = match;
-			const names = decodeEntryKey(encodedNames);
 
 			const cached = cache.get(requestedHash);
 			if (cached !== undefined) {
@@ -124,6 +131,7 @@ export function aether(options: AetherOptions = {}): Middleware {
 
 			let rebuilt: { code: string; hash: string };
 			try {
+				const names = decodeEntryKey(encodedNames);
 				rebuilt = await resolveBundle(names, options, cache);
 			} catch (err) {
 				log.error("aether", `failed to bundle entry "${encodedNames}":`, err);
