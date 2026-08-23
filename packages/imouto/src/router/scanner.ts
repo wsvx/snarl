@@ -4,12 +4,11 @@
  * SPDX-License-Identifier: MPL-2.0
  */
 
-import { SEPARATOR, toFileUrl } from "@std/path";
+import { join, SEPARATOR, toFileUrl } from "@std/path";
 import { dim } from "@std/fmt/colors";
 import { applySpecialFile } from "./special-files.ts";
 import { makeRoutePath } from "./paths.ts";
 import type { RootRouteMetadata, ScanEntry } from "./types.ts";
-import { walk } from "@std/fs";
 import { log } from "@july/snarl/verbosity";
 
 async function importRoute(base: string, file: string): Promise<ScanEntry | null> {
@@ -40,51 +39,72 @@ function isSpecialFile(name: string): boolean {
 	return name.startsWith("_") && isRouteFile(name);
 }
 
-async function collectFiles(root: string): Promise<{ routes: string[]; special: string[] }> {
+async function collectFiles(currentDir: string): Promise<{
+	routes: string[];
+	special: string[];
+	dirs: string[];
+}> {
 	const routes: string[] = [];
 	const special: string[] = [];
+	const dirs: string[] = [];
 
 	try {
-		for await (
-			const entry of walk(root, {
-				includeDirs: false,
-				followSymlinks: false,
-				exts: [".ts", ".tsx"],
-			})
-		) {
-			const name = entry.name;
-			if (isSpecialFile(name)) {
-				special.push(entry.path);
-			} else if (isRouteFile(name)) {
-				routes.push(entry.path);
+		for await (const entry of Deno.readDir(currentDir)) {
+			if (entry.isFile) {
+				const name = entry.name;
+				if (isSpecialFile(name)) {
+					special.push(join(currentDir, name));
+				} else if (isRouteFile(name)) {
+					routes.push(join(currentDir, name));
+				}
+			} else if (entry.isDirectory && !entry.name.startsWith("_")) {
+				dirs.push(join(currentDir, entry.name));
 			}
 		}
 	} catch (err) {
 		if (err instanceof Deno.errors.NotFound) {
-			log.warn("aether/discover", `Skipping directory, path does not exist: ${dim(root)}`);
+			log.warn("imouto/router", `Skipping directory, path does not exist: ${dim(currentDir)}`);
 		} else {
 			throw err;
 		}
 	}
 
-	return { routes, special };
+	return { routes, special, dirs };
+}
+
+async function processSpecialFiles(
+	meta: RootRouteMetadata,
+	specialFiles: string[],
+): Promise<void> {
+	await Promise.all(specialFiles.map((file) => applySpecialFile(meta, file)));
+}
+
+async function importRoutes(
+	base: string,
+	routeFiles: string[],
+): Promise<ScanEntry[]> {
+	const imported = await Promise.all(
+		routeFiles.map((file) => importRoute(base, file)),
+	);
+	return imported.filter((r): r is ScanEntry => r !== null);
 }
 
 export async function scanDir(
 	base: string,
-	root: string,
+	currentDir: string,
 	entries: ScanEntry[],
 	metas: Map<string, RootRouteMetadata>,
 ): Promise<void> {
 	const meta: RootRouteMetadata = { middlewares: [] };
-	metas.set(root, meta);
+	metas.set(currentDir, meta);
 
-	const { routes, special } = await collectFiles(root);
+	const { routes, special, dirs } = await collectFiles(currentDir);
+	await processSpecialFiles(meta, special);
 
-	await Promise.all(special.map((file) => applySpecialFile(meta, file)));
-	const importedRoutes = await Promise.all(
-		routes.map((file) => importRoute(base, file)),
-	);
+	const imports = await importRoutes(base, routes);
+	entries.push(...imports);
 
-	entries.push(...importedRoutes.filter(($): $ is ScanEntry => $ !== null));
+	for (const dir of dirs) {
+		await scanDir(base, dir, entries, metas);
+	}
 }
