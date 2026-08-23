@@ -24,7 +24,7 @@
     "jsr:@std/streams@^1.1.2": "1.1.2",
     "npm:esbuild@~0.25.5": "0.25.12",
     "npm:esbuild@~0.28.2": "0.28.2",
-    "npm:meriyah@^7.3.1": "7.3.1"
+    "npm:meriyah@^7.3.1": "7.3.2"
   },
   "jsr": {
     "@deno/esbuild-plugin@1.2.1": {
@@ -441,8 +441,8 @@
       "scripts": true,
       "bin": true
     },
-    "meriyah@7.3.1": {
-      "integrity": "sha512-642iQ3T0ZBXw+qrFo9m50CsdzSz9Tn0HtSKN3WxWlTXfcHUZwunxU4gMoMDIQzzOhwtkLOLeBs9GXs7NwDI2nA=="
+    "meriyah@7.3.2": {
+      "integrity": "sha512-uFPXbsoxaEd7PafMz3K/n/Z3kXz7iZBJtYU0VQB/kcV7i33+JghLTKweabLir480FUsyLz6gUIj4LW7kCQ35TA=="
     }
   },
   "workspace": {
