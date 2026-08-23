@@ -11,7 +11,7 @@ import { getContext } from "./context.ts";
 import { boring } from "./hash/mod.ts";
 import { log } from "@july/snarl/verbosity";
 
-export type CssCollisionPolicy = "throw" | "warn";
+export type CssCollisionPolicy = "throw" | "warn" | "ignore";
 
 export interface Css {
 	/**
@@ -90,32 +90,47 @@ export type ScopedStyleSheet =
 		readonly styled: StyledFactory;
 	};
 
-function createComponent(tag: string, scope: string): ScopedComponent {
-	return function TagComponent(props: Record<string, unknown> = {}) {
-		const ctx = getContext();
-		if (ctx) markStyleUsed(ctx, scope);
-
-		if (tag === "html" || tag === "body" || tag === "head") scope = "";
-
-		const { class: className, ...rest } = props;
-		return jsx(tag, {
-			...rest,
-			class: className ? `${scope ? `${scope} ` : ""}${className}` : scope,
-		});
-	};
+export interface CssTag {
+	(strings: TemplateStringsArray, ...values: unknown[]): ScopedStyleSheet;
 }
 
-function registerScope(scope: string, compiled: string, onCollision: CssCollisionPolicy): string {
-	const existing = styleRegistry.get(scope);
+const ROOT_TAGS = new Set(["html", "body", "head"]);
+const isRootTag = (tag: string): boolean => ROOT_TAGS.has(tag);
+const rootScopeKey = (scope: string): string => `${scope}__root`;
 
-	if (existing !== undefined && existing !== compiled) {
-		const message = `imouto: CSS hash collision detected for scope "${scope}"`;
-		if (onCollision === "warn") log.warn("css", message);
-		else throw new Error(message);
+function interpolate(strings: TemplateStringsArray, values: unknown[]): string {
+	let out = strings[0];
+	for (let i = 0; i < values.length; i++) out += String(values[i] ?? "") + strings[i + 1];
+	return out.trim();
+}
+
+function registerScope(scope: string, source: string, onCollision: CssCollisionPolicy): void {
+	const existing = styleRegistry.get(scope);
+	if (existing === source) return;
+
+	if (existing !== undefined && onCollision !== "ignore") {
+		const message = `imouto: CSS hash collision for scope "${scope}"`;
+		if (onCollision === "throw") throw new Error(message);
+		if (onCollision === "warn") log.warn(message);
 	}
 
-	styleRegistry.set(scope, compiled);
-	return scope;
+	styleRegistry.set(scope, source);
+}
+
+function createComponent(tag: string, scope: string, registryKey: string): ScopedComponent {
+	const root = isRootTag(tag);
+
+	return function TagComponent(props: Record<string, unknown> = {}) {
+		const ctx = getContext();
+		if (ctx) markStyleUsed(ctx, registryKey);
+
+		const { class: className, ...rest } = props;
+		const appliedScope = root ? undefined : scope;
+		return jsx(tag, {
+			...rest,
+			class: appliedScope ? (className ? `${appliedScope} ${className}` : appliedScope) : className,
+		});
+	};
 }
 
 function createStyledComponent(
@@ -124,31 +139,36 @@ function createStyledComponent(
 	scope: string,
 	onCollision: CssCollisionPolicy,
 ): ScopedComponent {
-	const shouldIgnore = tag === "html" || tag === "body" || tag === "head";
-	registerScope(scope, scopeCss(src, shouldIgnore ? "" : `.${scope}`), onCollision);
-	return createComponent(tag, scope);
+	const root = isRootTag(tag);
+	const registryKey = root ? rootScopeKey(scope) : scope;
+	registerScope(registryKey, scopeCss(src, root ? "" : `.${scope}`), onCollision);
+	return createComponent(tag, scope, registryKey);
+}
+
+/** builds a `.styled.tag\`...\`` factory */
+function buildStyledFactory(baseSrc: string | undefined, config: CssConfig): StyledFactory {
+	const { hash: hashFn, onCollision = "throw" } = config;
+
+	return new Proxy({} as StyledFactory, {
+		get(_target, property: string) {
+			const tag = property.toLowerCase();
+			return (strings: TemplateStringsArray, ...values: unknown[]) => {
+				const own = interpolate(strings, values);
+				const combined = baseSrc ? `${baseSrc} ${own}` : own;
+				const scope = hashFn(combined);
+				return createStyledComponent(tag, combined, scope, onCollision);
+			};
+		},
+	});
 }
 
 function createScopedStyles(src: string, config: CssConfig): ScopedStyleSheet {
 	const { hash: hashFn, onCollision = "throw" } = config;
 
-	let scope = hashFn(src);
-	scope = registerScope(scope, scopeCss(src, `.${scope}`), onCollision);
+	const scope = hashFn(src);
+	registerScope(scope, scopeCss(src, `.${scope}`), onCollision);
 
-	const styledFactory = new Proxy({} as StyledFactory, {
-		get(_target, property: string) {
-			const tag = property.toLowerCase();
-			return (strings: TemplateStringsArray, ...values: unknown[]) => {
-				const additional = strings.reduce<string>(
-					(acc, str, i) => acc + str + (values[i] ?? ""),
-					"",
-				).trim();
-				const combined = `${src} ${additional}`;
-				const scope$styled = hashFn(combined);
-				return createStyledComponent(tag, combined, scope$styled, onCollision);
-			};
-		},
-	});
+	const styledFactory = buildStyledFactory(src, config);
 
 	const componentProxy = new Proxy(
 		Object.create(stylesheetProto, {
@@ -165,8 +185,7 @@ function createScopedStyles(src: string, config: CssConfig): ScopedStyleSheet {
 		}),
 		{
 			get(target, tag: string) {
-				if (tag in target) return target[tag];
-				if (tag === "styled") return styledFactory;
+				if (tag in target) return (target as any)[tag];
 				return createStyledComponent(tag, src, scope, onCollision);
 			},
 		},
@@ -175,36 +194,14 @@ function createScopedStyles(src: string, config: CssConfig): ScopedStyleSheet {
 	return componentProxy as ScopedStyleSheet;
 }
 
-export interface CssTag {
-	(strings: TemplateStringsArray, ...values: unknown[]): ScopedStyleSheet;
-}
-
 export function createStyles(
 	config: CssConfig = { hash: boring },
 ): { css: CssTag; styled: StyledFactory } {
 	function cssTag(strings: TemplateStringsArray, ...values: unknown[]): ScopedStyleSheet {
-		const src = strings.reduce<string>(
-			(acc, str, i) => acc + str + (values[i] ?? ""),
-			"",
-		).trim();
-		return createScopedStyles(src, config);
+		return createScopedStyles(interpolate(strings, values), config);
 	}
 
-	const styled = new Proxy({} as StyledFactory, {
-		get(_target, property: string) {
-			const tag = property.toLowerCase();
-			return (strings: TemplateStringsArray, ...values: unknown[]) => {
-				const src = strings.reduce<string>(
-					(acc, str, i) => acc + str + (values[i] ?? ""),
-					"",
-				).trim();
-				const styles = createScopedStyles(src, config);
-				return createComponent(tag, styles.id);
-			};
-		},
-	});
-
-	return { css: cssTag, styled };
+	return { css: cssTag, styled: buildStyledFactory(undefined, config) };
 }
 
 let defaultHash: CssConfig["hash"] = boring;
