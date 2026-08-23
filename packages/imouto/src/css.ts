@@ -9,6 +9,9 @@ import type { Context, JSX } from "@july/snarl";
 import { markStyleUsed, scopeCss, styleRegistry } from "@404/varnish";
 import { getContext } from "./context.ts";
 import { boring } from "./hash/mod.ts";
+import { log } from "@july/snarl/verbosity";
+
+export type CssCollisionPolicy = "throw" | "warn";
 
 export interface Css {
 	/**
@@ -61,6 +64,12 @@ const stylesheetProto = Object.create(null, {
 
 export interface CssConfig {
 	hash: (input: string) => string;
+
+	/**
+	 * what to do when two different source strings hash to the same
+	 * scope. `"throw"` (default) fails fast; `"warn"` logs and keeps
+	 * the first-registered stylesheet */
+	onCollision?: CssCollisionPolicy;
 }
 
 export type ScopedComponent = JSX.FC<{ children?: any; class?: string; [key: string]: unknown }>;
@@ -96,26 +105,35 @@ function createComponent(tag: string, scope: string): ScopedComponent {
 	};
 }
 
-function registerScope(scope: string, compiled: string): string {
+function registerScope(scope: string, compiled: string, onCollision: CssCollisionPolicy): string {
 	const existing = styleRegistry.get(scope);
 
 	if (existing !== undefined && existing !== compiled) {
-		throw new Error(`imouto: CSS hash collision detected for scope "${scope}"`);
+		const message = `imouto: CSS hash collision detected for scope "${scope}"`;
+		if (onCollision === "warn") log.warn("css", message);
+		else throw new Error(message);
 	}
 
 	styleRegistry.set(scope, compiled);
 	return scope;
 }
 
-function createStyledComponent(tag: string, src: string, scope: string): ScopedComponent {
+function createStyledComponent(
+	tag: string,
+	src: string,
+	scope: string,
+	onCollision: CssCollisionPolicy,
+): ScopedComponent {
 	const shouldIgnore = tag === "html" || tag === "body" || tag === "head";
-	registerScope(scope, scopeCss(src, shouldIgnore ? "" : `.${scope}`));
+	registerScope(scope, scopeCss(src, shouldIgnore ? "" : `.${scope}`), onCollision);
 	return createComponent(tag, scope);
 }
 
-function createScopedStyles(src: string, hashFn: CssConfig["hash"]): ScopedStyleSheet {
+function createScopedStyles(src: string, config: CssConfig): ScopedStyleSheet {
+	const { hash: hashFn, onCollision = "throw" } = config;
+
 	let scope = hashFn(src);
-	scope = registerScope(scope, scopeCss(src, `.${scope}`));
+	scope = registerScope(scope, scopeCss(src, `.${scope}`), onCollision);
 
 	const styledFactory = new Proxy({} as StyledFactory, {
 		get(_target, property: string) {
@@ -127,7 +145,7 @@ function createScopedStyles(src: string, hashFn: CssConfig["hash"]): ScopedStyle
 				).trim();
 				const combined = `${src} ${additional}`;
 				const scope$styled = hashFn(combined);
-				return createStyledComponent(tag, combined, scope$styled);
+				return createStyledComponent(tag, combined, scope$styled, onCollision);
 			};
 		},
 	});
@@ -149,7 +167,7 @@ function createScopedStyles(src: string, hashFn: CssConfig["hash"]): ScopedStyle
 			get(target, tag: string) {
 				if (tag in target) return target[tag];
 				if (tag === "styled") return styledFactory;
-				return createStyledComponent(tag, src, scope);
+				return createStyledComponent(tag, src, scope, onCollision);
 			},
 		},
 	);
@@ -169,7 +187,7 @@ export function createStyles(
 			(acc, str, i) => acc + str + (values[i] ?? ""),
 			"",
 		).trim();
-		return createScopedStyles(src, config.hash);
+		return createScopedStyles(src, config);
 	}
 
 	const styled = new Proxy({} as StyledFactory, {
@@ -180,7 +198,7 @@ export function createStyles(
 					(acc, str, i) => acc + str + (values[i] ?? ""),
 					"",
 				).trim();
-				const styles = createScopedStyles(src, config.hash);
+				const styles = createScopedStyles(src, config);
 				return createComponent(tag, styles.id);
 			};
 		},
@@ -190,11 +208,13 @@ export function createStyles(
 }
 
 let defaultHash: CssConfig["hash"] = boring;
-let cachedInstance = createStyles({ hash: defaultHash });
+let defaultOnCollision: CssCollisionPolicy = "throw";
+let cachedInstance = createStyles({ hash: defaultHash, onCollision: defaultOnCollision });
 
 export function configureDefaultCss(config: Partial<CssConfig>): void {
 	if (config.hash) defaultHash = config.hash;
-	cachedInstance = createStyles({ hash: defaultHash });
+	if (config.onCollision) defaultOnCollision = config.onCollision;
+	cachedInstance = createStyles({ hash: defaultHash, onCollision: defaultOnCollision });
 }
 
 export const css: CssTag = (strings, ...values) => cachedInstance.css(strings, ...values);
