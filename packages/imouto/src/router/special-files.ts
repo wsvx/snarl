@@ -22,7 +22,9 @@ const SPECIAL_FILE_HANDLERS: Record<string, SpecialAssigner> = {
 	},
 	middleware: (meta, mod: MiddlewareModule) => {
 		const mw = mod.default;
-		meta.middlewares.push(...(Array.isArray(mw) ? mw : [mw]));
+		if (mw) {
+			meta.middlewares.push(...(Array.isArray(mw) ? mw : [mw]));
+		}
 	},
 	error: (meta, mod: ErrorModule) => {
 		meta.errorBoundary = mod;
