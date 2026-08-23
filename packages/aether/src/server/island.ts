@@ -7,8 +7,7 @@
 import { type JSX, jsx } from "@july/snarl/jsx-runtime";
 import { type IslandMeta, markIslandUsed } from "./registry.ts";
 import { isJsxElement } from "@july/snarl";
-import { effectScope, isReactive } from "../reactivity/mod.ts";
-import { isPromiseLike } from "../promise.ts";
+import { isReactive } from "../reactivity/mod.ts";
 
 export interface IslandWrapperOptions {
 	/** wrapper element tag around the hydration marker. defaults to "div" */

@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: MPL-2.0
  */
 
-import { boring, getContext } from "@404/imouto";
+import { boring, getContext, type JSX } from "@404/imouto";
 
 export interface IslandMeta {
 	id: string;
@@ -23,13 +23,18 @@ const REGISTRY = new Map<string, CachedIsland>();
 const USED_ISLANDS = Symbol.for("aether.used-islands");
 const ISLAND_META_KEY = Symbol.for("aether.island-meta");
 
+let idHash: (input: string) => string = boring;
+
+export function configureIslandHash(hash: (input: string) => string): void {
+	idHash = hash;
+}
+
 export function generateIslandId(moduleUrl: string, exportName: string): string {
-	return boring(`${moduleUrl}:${exportName}`);
+	return idHash(`${moduleUrl}:${exportName}`);
 }
 
 export function registerIslandComponent(
-	// deno-lint-ignore ban-types
-	Component: Function,
+	Component: (props: Record<string, unknown>) => JSX.Node,
 	moduleUrl: string,
 	exportName = "default",
 	id: string = generateIslandId(moduleUrl, exportName),

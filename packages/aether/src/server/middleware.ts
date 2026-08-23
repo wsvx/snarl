@@ -4,7 +4,12 @@
  * SPDX-License-Identifier: MPL-2.0
  */
 
-import { type Context, type Middleware, MutableResponse, provideMiddleware } from "@july/snarl";
+import {
+	type Context,
+	type Middleware,
+	type MutableResponse,
+	provideMiddleware,
+} from "@july/snarl";
 import {
 	type AetherServeOptions,
 	bundleIslands,
@@ -15,10 +20,14 @@ import { discoverAndRegisterIslands } from "./discover.ts";
 import { getUsedIslands } from "./registry.ts";
 import { log } from "@july/snarl/verbosity";
 import { boring } from "@404/aether";
+import { HtmlInjector } from "@404/varnish";
 
 const BUNDLE_CACHE = new Map<string, string>();
 const HASH_BY_NAMESET = new Map<string, string>();
 const PENDING_BUNDLES = new Map<string, Promise<{ code: string; hash: string }>>();
+
+const CACHE_CONTROL_IMMUTABLE = "public, max-age=31536000, immutable";
+const ENTRY_ROUTE_RE = /^\/_aether\/entry\/([A-Za-z0-9_-]+)\.([0-9a-z]+)\.js$/;
 
 export interface AetherOptions extends AetherServeOptions {
 	/** directories or files to analyse for interactive components */
@@ -61,6 +70,8 @@ async function injectIslandScript(
 	options: AetherOptions,
 	cache: Map<string, string>,
 ): Promise<MutableResponse> {
+	if (!response.body) return response;
+
 	const contentType = response.headers.get("Content-Type") ?? "";
 	if (!contentType.includes("text/html")) return response;
 
@@ -78,33 +89,12 @@ async function injectIslandScript(
 	}
 
 	const src = `/_aether/entry/${encodeEntryKey(names)}.${hash}.js`;
-
-	const html = await response.text();
-	if (!html || html.includes(src)) return response;
-
 	const script = `<script type="module" src="${src}"></script>`;
 
-	let injected: string;
-	if (html.includes("</body>")) {
-		injected = html.replace("</body>", `${script}</body>`);
-	} else if (html.includes("</html>")) {
-		injected = html.replace("</html>", `${script}</html>`);
-	} else {
-		injected = html + script;
-	}
-
-	const headers = new Headers(response.headers);
-	headers.delete("Content-Length");
-
-	return new MutableResponse(injected, {
-		status: response.status,
-		statusText: response.statusText,
-		headers,
-	});
+	return response.pipeThrough(
+		new HtmlInjector({ body: script }),
+	);
 }
-
-const CACHE_CONTROL_IMMUTABLE = "public, max-age=31536000, immutable";
-const ENTRY_ROUTE_RE = /^\/_aether\/entry\/([A-Za-z0-9_-]+)\.([0-9a-z]+)\.js$/;
 
 export function aether(options: AetherOptions = {}): Middleware {
 	const cache = options.cache ?? BUNDLE_CACHE;

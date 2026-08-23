@@ -124,7 +124,7 @@ export async function discoverAndRegisterIslands(entrypoints: string[]): Promise
 	const expandedFiles = await expandEntrypoints(entrypoints);
 
 	if (expandedFiles.length === 0) {
-		return; 
+		return;
 	}
 
 	log.warn("aether/discover", cyan(bold("\n  · discovering islands:")));
@@ -163,7 +163,7 @@ export async function discoverAndRegisterIslands(entrypoints: string[]): Promise
 					if (typeof value !== "function") continue;
 					if (exportName !== "default" && !/^[A-Z]/.test(exportName)) continue;
 
-					registerIslandComponent(value, moduleUrl, exportName);
+					registerIslandComponent(value as () => string, moduleUrl, exportName);
 					registered = true, registeredCount++;
 				}
 

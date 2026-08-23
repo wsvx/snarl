@@ -7,15 +7,20 @@
 import { type AppOptions, createApp as createImoutoApp } from "@404/imouto";
 import { aether, type AetherOptions } from "./middleware.ts";
 import { discoverAndRegisterIslands } from "./discover.ts";
+import { configureIslandHash } from "./registry.ts";
 
 export interface AetherAppOptions extends AppOptions {
-	aether?: Omit<AetherOptions, "entrypoints"> & { entrypoints?: string[] };
+	aether?: Omit<AetherOptions, "entrypoints"> & {
+		entrypoints?: string[];
+		islandHash?: (input: string) => string;
+	};
 }
 
 export async function createApp(
 	options: AetherAppOptions = {},
 ): Promise<ReturnType<typeof createImoutoApp>> {
 	const { aether: aetherOpts = {}, routesDir = "./routes", ...rest } = options;
+	if (aetherOpts.islandHash) configureIslandHash(aetherOpts.islandHash);
 
 	const app = await createImoutoApp({ routesDir, ...rest });
 
