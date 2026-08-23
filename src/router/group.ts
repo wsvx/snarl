@@ -10,6 +10,7 @@ import { insertRoute, type RadixNode, type TreeOptions } from "./tree.ts";
 import { extractPattern, type Route, type RouteMetadata, type RoutePayload } from "./route.ts";
 import type { Router } from "./factory.ts";
 import type { Handler } from "../context/mod.ts";
+import { normalisePath } from "./paths.ts";
 
 export function mergeSubRouter(
 	subRoutes: Record<Method, Route<any>[]>,
@@ -78,32 +79,6 @@ function processRoutePattern(
 	if (!dynamicPatternRegex.test(pattern)) {
 		exactMap[pattern] = route;
 	}
-}
-
-function normalisePath(path: string): string {
-	let idx = path.indexOf("//");
-	if (idx === -1) return path;
-
-	let result = path.slice(0, idx + 1);
-	let start = idx + 2;
-	const len = path.length;
-
-	while (start < len) {
-		idx = path.indexOf("/", start);
-
-		if (idx === -1) {
-			result += path.slice(start);
-			break;
-		}
-
-		if (idx > start) {
-			result += path.slice(start, idx + 1);
-		}
-
-		start = idx + 1;
-	}
-
-	return result;
 }
 
 export function joinPrefix(parentPrefix: string, childPrefix: string): string {

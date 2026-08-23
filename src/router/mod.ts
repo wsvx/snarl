@@ -10,3 +10,4 @@ export * from "./config.ts";
 export * from "./dispatch.ts";
 export * from "./group.ts";
 export * from "./tree.ts";
+export * from "./paths.ts";
