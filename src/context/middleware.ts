@@ -106,6 +106,18 @@ export class MutableResponse {
 		const buffer = await new Response(this.body).arrayBuffer();
 		return this.body = this.#bytesCache = new Uint8Array(buffer);
 	}
+
+	pipeThrough<T>(transform: TransformStream<Uint8Array, T>): this {
+		if (this.body === null) return this;
+
+		const stream = this.body instanceof ReadableStream ? this.body : new Response(this.body).body;
+
+		if (stream) {
+			this.body = stream.pipeThrough(transform);
+			this.#headers?.delete("Content-Length");
+		}
+		return this;
+	}
 }
 
 function isFreshBody(body: BodyInit | null): boolean {
