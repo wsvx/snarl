@@ -36,6 +36,15 @@ export interface AppOptions {
 	logger?: boolean | LoggerOptions | MiddlewareLike;
 }
 
+interface ResolvedAppOptions {
+	staticDir: string;
+	routesDir: string;
+	immutableStatic: boolean;
+	env: string;
+	verbose: boolean;
+	maxAge: number;
+}
+
 const DEFAULT_APP_OPTIONS: Required<Omit<AppOptions, "logger" | "env">> = {
 	staticDir: "./static",
 	routesDir: "./src/routes",
@@ -44,33 +53,33 @@ const DEFAULT_APP_OPTIONS: Required<Omit<AppOptions, "logger" | "env">> = {
 	verbose: true,
 };
 
+function resolveAppOptions(options: AppOptions): ResolvedAppOptions {
+	const env = options.env ?? Deno.env.get("ENV") ?? "development";
+
+	return {
+		staticDir: options.staticDir ?? DEFAULT_APP_OPTIONS.staticDir,
+		routesDir: options.routesDir ?? DEFAULT_APP_OPTIONS.routesDir,
+		immutableStatic: options.immutableStatic ?? DEFAULT_APP_OPTIONS.immutableStatic,
+		env,
+		verbose: options.verbose ?? env !== "production",
+		maxAge: options.maxAge ?? (options.immutableStatic ? 31536000 : DEFAULT_APP_OPTIONS.maxAge),
+	};
+}
+
 export async function createApp(
 	options: AppOptions = {},
 ): Promise<ReturnType<typeof createRouter>> {
 	await preflightPermissions([
 		{
 			descriptor: { name: "env" },
-			reason: "get dev/prod/esbuild/ts-blank-space required environment vars",
+			reason: "get dev/prod/esbuild required environment vars",
 		},
 		{ descriptor: { name: "read" }, reason: "read routes and static files" },
 	], { strict: true });
 
-	const defaultEnv = Deno.env.get("ENV") || "development";
-
-	const {
-		staticDir,
-		routesDir,
-		immutableStatic,
-		env,
-		verbose,
-		maxAge,
-	} = {
-		...DEFAULT_APP_OPTIONS,
-		...options,
-		env: options?.env ?? defaultEnv,
-		verbose: options?.verbose ?? (options?.env ?? defaultEnv) !== "production",
-		maxAge: options?.maxAge ?? (options?.immutableStatic ? 31536000 : 3600),
-	};
+	const { staticDir, routesDir, immutableStatic, env, verbose, maxAge } = resolveAppOptions(
+		options,
+	);
 
 	const router = createRouter();
 	router.config.onListen = ({ hostname, port }) => {
