@@ -6,6 +6,7 @@
 
 import { type AppOptions, createApp as createImoutoApp } from "@404/imouto";
 import { aether, type AetherOptions } from "./middleware.ts";
+import { discoverAndRegisterIslands } from "./discover.ts";
 
 export interface AetherAppOptions extends AppOptions {
 	aether?: Omit<AetherOptions, "entrypoints"> & { entrypoints?: string[] };
@@ -18,6 +19,11 @@ export async function createApp(
 
 	const app = await createImoutoApp({ routesDir, ...rest });
 
+	const entrypoints = aetherOpts.entrypoints ?? [routesDir];
+	if (entrypoints) {
+		await discoverAndRegisterIslands(entrypoints);
+	}
+
 	app.use({
 		name: "aether",
 		priority: 800,
@@ -25,7 +31,7 @@ export async function createApp(
 		override: true,
 		factory: () =>
 			aether({
-				entrypoints: aetherOpts.entrypoints ?? [routesDir],
+				entrypoints: [],
 				...aetherOpts,
 			}),
 		permissions: [

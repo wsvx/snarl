@@ -21,6 +21,8 @@ const LOADER_MAP: Record<string, "ts" | "tsx" | "js" | "jsx"> = {
 	".cjs": "js",
 };
 
+const ANALYSIS_CACHE = new Map<string, Awaited<ReturnType<typeof analyseIslandSource>>>();
+
 export function extractImportSpecifiers(ast: AstNode): string[] {
 	const specs: string[] = [];
 
@@ -122,7 +124,7 @@ export async function discoverAndRegisterIslands(entrypoints: string[]): Promise
 	const expandedFiles = await expandEntrypoints(entrypoints);
 
 	if (expandedFiles.length === 0) {
-		return log.warn("aether/discover", `no files found in entrypoints`);
+		return; 
 	}
 
 	log.warn("aether/discover", cyan(bold("\n  · discovering islands:")));
@@ -145,19 +147,23 @@ export async function discoverAndRegisterIslands(entrypoints: string[]): Promise
 			continue;
 		}
 
-		const analysis = await analyseIslandSource(source, loader);
+		let analysis = ANALYSIS_CACHE.get(path);
+		if (!analysis) {
+			analysis = await analyseIslandSource(source, loader);
+			ANALYSIS_CACHE.set(path, analysis);
+		}
 
-		if (analysis.isIsland && analysis.confidence !== "none" && hasComponentExport(analysis.ast)) {
+		if (analysis.isIsland && analysis.confidence === "high" && hasComponentExport(analysis.ast)) {
 			const moduleUrl = toFileUrl(path).href;
 			try {
 				const mod = await import(moduleUrl);
 				let registered = false;
+
 				for (const [exportName, value] of Object.entries(mod)) {
 					if (typeof value !== "function") continue;
 					if (exportName !== "default" && !/^[A-Z]/.test(exportName)) continue;
 
-					// deno-lint-ignore ban-types
-					registerIslandComponent(value as Function, moduleUrl, exportName);
+					registerIslandComponent(value, moduleUrl, exportName);
 					registered = true, registeredCount++;
 				}
 

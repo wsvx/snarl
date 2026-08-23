@@ -13,11 +13,15 @@ export interface IslandMeta {
 	Component: (...args: any[]) => unknown;
 }
 
-// deno-lint-ignore ban-types
-const byComponent = new Map<Function, IslandMeta>();
-const byId = new Map<string, IslandMeta>();
+interface CachedIsland {
+	meta: IslandMeta;
+	analysis?: Awaited<ReturnType<typeof import("./analyser.ts").analyseIslandSource>>;
+}
+
+const REGISTRY = new Map<string, CachedIsland>();
 
 const USED_ISLANDS = Symbol.for("aether.used-islands");
+const ISLAND_META_KEY = Symbol.for("aether.island-meta");
 
 export function generateIslandId(moduleUrl: string, exportName: string): string {
 	return boring(`${moduleUrl}:${exportName}`);
@@ -30,46 +34,50 @@ export function registerIslandComponent(
 	exportName = "default",
 	id: string = generateIslandId(moduleUrl, exportName),
 ): IslandMeta {
-	const existingById = byId.get(id);
-	if (existingById) {
-		if (existingById.Component !== Component || existingById.moduleUrl !== moduleUrl) {
+	const existing = REGISTRY.get(id);
+
+	if (existing && Deno.env.get("ENV") !== "production") {
+		existing.meta.Component = Component as any;
+		existing.meta.moduleUrl = moduleUrl;
+		if ((Component as any)[ISLAND_META_KEY]) {
+			(Component as any)[ISLAND_META_KEY] = existing;
+		}
+		return existing.meta;
+	}
+
+	if (existing) {
+		if (existing.meta.Component !== Component || existing.meta.moduleUrl !== moduleUrl) {
 			throw new Error(
 				`aether: island id "${id}" is already registered from a different component/module`,
 			);
 		}
-		return existingById;
+		return existing.meta;
 	}
 
-	const existingByComponent = byComponent.get(Component);
-	if (existingByComponent) return existingByComponent;
+	const meta: IslandMeta = { id, moduleUrl, exportName, Component: Component as any };
 
-	const meta: IslandMeta = {
-		id,
-		moduleUrl,
-		exportName,
-		Component: Component as IslandMeta["Component"],
-	};
-
-	byId.set(id, meta);
-	byComponent.set(Component, meta);
-
-	return meta;
+	Object.defineProperty(Component, ISLAND_META_KEY, {
+		value: meta,
+		enumerable: false,
+		configurable: true,
+	});
+	return REGISTRY.set(id, { meta }), meta;
 }
 
 export function getIslandMeta(value: unknown): IslandMeta | undefined {
-	return typeof value === "function" ? byComponent.get(value) : undefined;
+	return typeof value === "function" ? (value as any)[ISLAND_META_KEY] : undefined;
 }
 
 export function getIslandMetaById(id: string): IslandMeta | undefined {
-	return byId.get(id);
+	return REGISTRY.get(id)?.meta;
 }
 
 export function getIslandModuleUrl(id: string): string | undefined {
-	return byId.get(id)?.moduleUrl;
+	return REGISTRY.get(id)?.meta?.moduleUrl;
 }
 
 export function getIslandExportName(id: string): string {
-	return byId.get(id)?.exportName ?? "default";
+	return REGISTRY.get(id)?.meta?.exportName ?? "default";
 }
 
 export function markIslandUsed(id: string): void {
