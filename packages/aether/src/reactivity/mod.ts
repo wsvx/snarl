@@ -48,3 +48,4 @@ export type { Link, ReactiveNode } from "./types.ts";
 export type { ReactiveAccessor } from "./accessor.ts";
 export { sharedSignal } from "./shared.ts";
 export { onMount } from "./lifecycle.ts";
+export { reactive } from "./proxy.ts";
