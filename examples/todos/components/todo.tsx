@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: MPL-2.0
  */
 
-import { css, signal } from "@404/aether";
+import { css, reactive, signal } from "@404/aether";
 
 const Styled = css`
 	:scope {
@@ -73,28 +73,30 @@ interface Todo {
 let nextId = 1;
 
 export default function Todos() {
-	const todos = signal<Todo[]>([
+	const todos = reactive<Todo[]>([
 		{ id: nextId++, text: "meow", done: false },
 		{ id: nextId++, text: "mrrp", done: true },
 	]);
-	const newTodo = signal("w");
+	const todo = signal("a little");
 
 	const addTodo = () => {
-		const text = newTodo().trim();
+		const text = todo().trim();
 		if (!text) return;
-		todos.update((list) => [...list, { id: nextId++, text, done: false }]);
-		newTodo("");
+		todos.push({ id: nextId++, text, done: false });
+		todo.set("");
 	};
 
-	const toggleTodo = (id: number) => {
-		todos.update((list) => list.map((t) => (t.id === id ? { ...t, done: !t.done } : t)));
+	const toggleTodo = (todo: Todo) => {
+		todo.done = !todo.done;
 	};
 
 	const deleteTodo = (id: number) => {
-		todos.update((list) => list.filter((t) => t.id !== id));
+		const idx = todos.findIndex((t) => t.id === id);
+		if (idx !== -1) todos.splice(idx, 1);
 	};
 
-	const remaining = todos.map((list) => list.filter((t) => !t.done).length);
+	const remaining = todos.derive(($) => $.filter((t) => !t.done).length);
+	const isEmpty = todos.derive(($) => $.length === 0);
 
 	return (
 		<Styled.div>
@@ -102,16 +104,16 @@ export default function Todos() {
 			<div class="input-row">
 				<input
 					type="text"
-					bind:value={newTodo}
+					bind:value={todo}
 					placeholder="WHJATDOUWANT<:hazelfae:1480329521075851314>"
 				/>
-				<button type="button" on:click={addTodo} disabled={newTodo.map((t) => !t.trim())}>
+				<button type="button" on:click={addTodo} disabled={todo.map((t) => !t.trim())}>
 					Add
 				</button>
 			</div>
 
-			<show when={todos.map((list) => list.length === 0)}>
-				<p>nothing here yet mate</p>
+			<show when={isEmpty}>
+				<p>nothing here mate</p>
 			</show>
 
 			<ul class="todo-list">
@@ -121,9 +123,9 @@ export default function Todos() {
 							<input
 								type="checkbox"
 								checked={todo.done}
-								on:change={() => toggleTodo(todo.id)}
+								on:change={() => toggleTodo(todo)}
 							/>
-							<label onClick={() => toggleTodo(todo.id)}>{todo.text}</label>
+							<label onClick={() => toggleTodo(todo)}>{todo.text}</label>
 							<button type="button" class="delete-btn" onClick={() => deleteTodo(todo.id)}>
 								✕
 							</button>
