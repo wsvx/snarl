@@ -65,4 +65,3 @@ export function makeFallbackPathParts(rawUrl: string): PathParts {
 	const url = new URL(rawUrl);
 	return { pathname: url.pathname, search: url.search };
 }
-
