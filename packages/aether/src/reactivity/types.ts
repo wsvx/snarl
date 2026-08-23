@@ -11,11 +11,17 @@ import type { SignalNode } from "./signal.ts";
 // deno-fmt-ignore
 export const enum ReactiveFlags {
 	None          = 0,
+	/** this node can itself change value (a signal or computed) */
 	Mutable       = 1 << 0,
+	/** an active observer (effect, or a computed with subscribers) that should be notified/scheduled on change */
 	Watching      = 1 << 1,
+	/** lets `propagate` tell a genuine re-entrant write apart from unrelated graph traffic */
 	RecursedCheck = 1 << 2,
+	/** a write reached this node while it was mid-evaluation (`RecursedCheck` set) */
 	Recursed      = 1 << 3,
+	/** confirmed to need recomputation */
 	Dirty         = 1 << 4,
+	/** reachable from a write but not yet confirmed dirty */
 	Pending       = 1 << 5,
 }
 

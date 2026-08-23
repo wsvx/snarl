@@ -4,12 +4,21 @@
  * SPDX-License-Identifier: MPL-2.0
  */
 
+/**
+ * @module reactivity/graph
+ *
+ * The push-pull dependency graph underlying signals, computeds, and effects.
+ */
+
 import type { AnyReactiveNode } from "./types.ts";
 import { type Link, ReactiveFlags, type ReactiveNode } from "./types.ts";
 
 export interface ReactiveOps {
+	/** recomputes `sub`'s value (signal: adopt pending value; computed: re-run getter) and reports whether the value actually changed */
 	readonly update: (sub: AnyReactiveNode) => boolean;
+	/** called once, when a node transitions to `Watching` + dirty during a push; drives effect scheduling */
 	readonly notify: (sub: AnyReactiveNode) => void;
+	/** called when a dependency's subscriber list becomes empty */
 	readonly unwatched: (dep: AnyReactiveNode) => void;
 }
 
@@ -22,6 +31,7 @@ export function createReactiveSystem({ update, notify, unwatched }: ReactiveOps)
 		shallowPropagate,
 	});
 
+	/** records that `sub` read `dep` during its current evaluation */
 	function link(dep: ReactiveNode, sub: ReactiveNode, version: number): void {
 		const prevDep = sub.depsTail;
 		if (prevDep !== undefined && prevDep.dep === dep) return;
@@ -57,6 +67,9 @@ export function createReactiveSystem({ update, notify, unwatched }: ReactiveOps)
 		else dep.subs = newLink;
 	}
 
+	/** removes `link` from both lists it participates in (dep's
+	 subscribers, sub's dependencies) and returns the next link in
+	 * `sub`'s dependency chain */
 	function unlink(link: Link, sub = link.sub): Link | undefined {
 		const { dep, prevDep, nextDep, nextSub, prevSub } = link;
 
