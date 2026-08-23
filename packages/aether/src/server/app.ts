@@ -7,12 +7,13 @@
 import { type AppOptions, createApp as createImoutoApp } from "@404/imouto";
 import { aether, type AetherOptions } from "./middleware.ts";
 import { discoverAndRegisterIslands } from "./discover.ts";
-import { configureIslandHash } from "./registry.ts";
+import { IslandRegistry, type IslandRegistryOptions } from "./registry.ts";
 
 export interface AetherAppOptions extends AppOptions {
-	aether?: Omit<AetherOptions, "entrypoints"> & {
+	aether?: Omit<AetherOptions, "entrypoints" | "registry" | "islandHash" | "hmr"> & {
 		entrypoints?: string[];
-		islandHash?: (input: string) => string;
+		islandHash?: IslandRegistryOptions["hash"];
+		hmr?: boolean;
 	};
 }
 
@@ -20,14 +21,15 @@ export async function createApp(
 	options: AetherAppOptions = {},
 ): Promise<ReturnType<typeof createImoutoApp>> {
 	const { aether: aetherOpts = {}, routesDir = "./routes", ...rest } = options;
-	if (aetherOpts.islandHash) configureIslandHash(aetherOpts.islandHash);
+
+	const registry = new IslandRegistry({
+		hash: aetherOpts.islandHash,
+		hmr: aetherOpts.hmr ?? (Deno.env.get("ENV") !== "production"),
+	});
 
 	const app = await createImoutoApp({ routesDir, ...rest });
-
 	const entrypoints = aetherOpts.entrypoints ?? [routesDir];
-	if (entrypoints) {
-		await discoverAndRegisterIslands(entrypoints);
-	}
+	if (entrypoints) await discoverAndRegisterIslands(entrypoints, registry);
 
 	app.use({
 		name: "aether",
@@ -38,6 +40,7 @@ export async function createApp(
 			aether({
 				entrypoints: [],
 				...aetherOpts,
+				registry,
 			}),
 		permissions: [
 			{ descriptor: { name: "run", command: "esbuild" }, reason: "to bundle island components" },

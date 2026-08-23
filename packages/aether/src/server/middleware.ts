@@ -17,58 +17,74 @@ import {
 	encodeEntryKey,
 } from "./bundler.ts";
 import { discoverAndRegisterIslands } from "./discover.ts";
-import { getUsedIslands } from "./registry.ts";
+import {
+	getUsedIslands,
+	IslandRegistry,
+	type IslandRegistryOptions,
+	setActiveIslandRegistry,
+} from "./registry.ts";
 import { log } from "@july/snarl/verbosity";
-import { boring } from "@404/aether";
+import { boring } from "@404/imouto";
 import { HtmlInjector } from "@404/varnish";
-
-const BUNDLE_CACHE = new Map<string, string>();
-const HASH_BY_NAMESET = new Map<string, string>();
-const PENDING_BUNDLES = new Map<string, Promise<{ code: string; hash: string }>>();
 
 const CACHE_CONTROL_IMMUTABLE = "public, max-age=31536000, immutable";
 const ENTRY_ROUTE_RE = /^\/_aether\/entry\/([A-Za-z0-9_-]+)\.([0-9a-z]+)\.js$/;
 
 export interface AetherOptions extends AetherServeOptions {
-	/** directories or files to analyse for interactive components */
 	entrypoints?: string[];
+	/** shares island identity with a registry created elsewhere (e.g. by `createApp()`) */
+	registry?: IslandRegistry;
+	/** hash function for island ids. ignored if `registry` is supplied */
+	islandHash?: IslandRegistryOptions["hash"];
+	/** hot-swap islands in place on re-registration. ignored if `registry` is supplied.
+	 *  defaults to `Deno.env.get("ENV") !== "production"` */
+	hmr?: boolean;
 }
 
-function resolveBundle(
-	names: readonly string[],
-	options: AetherOptions,
-	cache: Map<string, string>,
-): Promise<{ code: string; hash: string }> {
-	const nameSetKey = names.join(",");
+export class IslandBundleCache {
+	readonly compiled: Map<string, string>;
+	#hashByNameSet = new Map<string, string>();
+	#pending = new Map<string, Promise<{ code: string; hash: string }>>();
 
-	const knownHash = HASH_BY_NAMESET.get(nameSetKey);
-	if (knownHash) {
-		const cached = cache.get(knownHash);
-		if (cached !== undefined) return Promise.resolve({ code: cached, hash: knownHash });
+	constructor(compiled: Map<string, string> = new Map()) {
+		this.compiled = compiled;
 	}
 
-	return PENDING_BUNDLES.getOrInsertComputed(nameSetKey, async () => {
-		try {
-			const code = await bundleIslands(names, options);
-			const hash = boring(code);
+	resolve(
+		names: readonly string[],
+		registry: IslandRegistry,
+		options: AetherServeOptions,
+	): Promise<{ code: string; hash: string }> {
+		const nameSetKey = names.join(",");
 
-			cache.set(hash, code);
-			HASH_BY_NAMESET.set(nameSetKey, hash);
-			PENDING_BUNDLES.delete(nameSetKey);
-
-			return { code, hash };
-		} catch (err) {
-			PENDING_BUNDLES.delete(nameSetKey);
-			throw err;
+		const knownHash = this.#hashByNameSet.get(nameSetKey);
+		if (knownHash) {
+			const cached = this.compiled.get(knownHash);
+			if (cached !== undefined) return Promise.resolve({ code: cached, hash: knownHash });
 		}
-	});
+
+		return this.#pending.getOrInsertComputed(nameSetKey, async () => {
+			try {
+				const code = await bundleIslands(names, registry, options);
+				const hash = boring(code);
+				this.compiled.set(hash, code);
+				this.#hashByNameSet.set(nameSetKey, hash);
+				this.#pending.delete(nameSetKey);
+				return { code, hash };
+			} catch (err) {
+				this.#pending.delete(nameSetKey);
+				throw err;
+			}
+		});
+	}
 }
 
 async function injectIslandScript(
 	response: MutableResponse,
 	ctx: Context,
+	registry: IslandRegistry,
 	options: AetherOptions,
-	cache: Map<string, string>,
+	bundles: IslandBundleCache,
 ): Promise<MutableResponse> {
 	if (!response.body) return response;
 
@@ -82,34 +98,37 @@ async function injectIslandScript(
 
 	let hash: string;
 	try {
-		({ hash } = await resolveBundle(names, options, cache));
+		({ hash } = await bundles.resolve(names, registry, options));
 	} catch (err) {
 		log.error("aether", "failed to pre-bundle islands for script injection:", err);
 		return response;
 	}
 
 	const src = `/_aether/entry/${encodeEntryKey(names)}.${hash}.js`;
-	const script = `<script type="module" src="${src}"></script>`;
-
 	return response.pipeThrough(
-		new HtmlInjector({ body: script }),
+		new HtmlInjector({ body: `<script type="module" src="${src}"></script>` }),
 	);
 }
 
 export function aether(options: AetherOptions = {}): Middleware {
-	const cache = options.cache ?? BUNDLE_CACHE;
+	const registry = options.registry ?? new IslandRegistry({
+		hash: options.islandHash,
+		hmr: options.hmr ?? (Deno.env.get("ENV") !== "production"),
+	});
+	const bundles = new IslandBundleCache(options.cache);
 
 	if (options.entrypoints) {
-		discoverAndRegisterIslands(options.entrypoints).catch(log.error);
+		discoverAndRegisterIslands(options.entrypoints, registry).catch(log.error);
 	}
 
 	return async (ctx, next) => {
+		setActiveIslandRegistry(registry);
 		const match = ctx.url.pathname.match(ENTRY_ROUTE_RE);
 
 		if (match) {
 			const [, encodedNames, requestedHash] = match;
 
-			const cached = cache.get(requestedHash);
+			const cached = bundles.compiled.get(requestedHash);
 			if (cached !== undefined) {
 				return new Response(cached, {
 					headers: {
@@ -122,7 +141,7 @@ export function aether(options: AetherOptions = {}): Middleware {
 			let rebuilt: { code: string; hash: string };
 			try {
 				const names = decodeEntryKey(encodedNames);
-				rebuilt = await resolveBundle(names, options, cache);
+				rebuilt = await bundles.resolve(names, registry, options);
 			} catch (err) {
 				log.error("aether", `failed to bundle entry "${encodedNames}":`, err);
 				return new Response("Failed to bundle island entry", { status: 500 });
@@ -144,7 +163,7 @@ export function aether(options: AetherOptions = {}): Middleware {
 		}
 
 		const response = await next();
-		return injectIslandScript(response, ctx, options, cache);
+		return injectIslandScript(response, ctx, registry, options, bundles);
 	};
 }
 

@@ -6,7 +6,7 @@
 
 import { dirname, join, relative, resolve, toFileUrl } from "@std/path";
 import { analyseIslandSource, type AstNode, walk } from "./analyser.ts";
-import { registerIslandComponent } from "./registry.ts";
+import type { IslandRegistry } from "./registry.ts";
 import { walk as fsWalk } from "@std/fs";
 import { bold, cyan, dim } from "@std/fmt/colors";
 import { log } from "@july/snarl/verbosity";
@@ -120,7 +120,10 @@ async function expandEntrypoints(entrypoints: string[]): Promise<string[]> {
 }
 
 /** walks the import graph, analyses components, and registers them automatically */
-export async function discoverAndRegisterIslands(entrypoints: string[]): Promise<void> {
+export async function discoverAndRegisterIslands(
+	entrypoints: string[],
+	registry: IslandRegistry,
+): Promise<void> {
 	const expandedFiles = await expandEntrypoints(entrypoints);
 
 	if (expandedFiles.length === 0) {
@@ -163,7 +166,7 @@ export async function discoverAndRegisterIslands(entrypoints: string[]): Promise
 					if (typeof value !== "function") continue;
 					if (exportName !== "default" && !/^[A-Z]/.test(exportName)) continue;
 
-					registerIslandComponent(value as () => string, moduleUrl, exportName);
+					registry.register(value as () => string, moduleUrl, exportName);
 					registered = true, registeredCount++;
 				}
 

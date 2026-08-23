@@ -7,7 +7,7 @@
 import * as snarl from "@july/snarl/jsx-runtime";
 
 import { island } from "./server/island.ts";
-import { getIslandMeta } from "./server/registry.ts";
+import { getActiveIslandRegistry } from "./server/registry.ts";
 import { type Computed, isReactive, type Signal } from "./reactivity/mod.ts";
 import { For, type ForProps, Show, type ShowProps } from "./control-flow.ts";
 
@@ -17,7 +17,7 @@ const wrappers = new WeakMap<Function, ReturnType<typeof island>>();
 function maybeRenderIsland(tag: unknown, props: any): any {
 	if (typeof tag !== "function") return null;
 
-	const meta = getIslandMeta(tag);
+	const meta = getActiveIslandRegistry()?.getMeta(tag);
 	if (!meta) return null;
 
 	const wrapper = wrappers.getOrInsertComputed(tag, () => island(meta));

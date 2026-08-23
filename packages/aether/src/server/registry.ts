@@ -4,7 +4,11 @@
  * SPDX-License-Identifier: MPL-2.0
  */
 
-import { boring, getContext, type JSX } from "@404/imouto";
+import { boring, getContext } from "@404/imouto";
+
+const USED_ISLANDS = Symbol.for("aether.used-islands");
+const ISLAND_META_KEY = Symbol.for("aether.island-meta");
+const ISLAND_REGISTRY = Symbol.for("aether.island-registry");
 
 export interface IslandMeta {
 	id: string;
@@ -15,86 +19,88 @@ export interface IslandMeta {
 
 interface CachedIsland {
 	meta: IslandMeta;
-	analysis?: Awaited<ReturnType<typeof import("./analyser.ts").analyseIslandSource>>;
 }
 
-const REGISTRY = new Map<string, CachedIsland>();
+export interface IslandRegistryOptions {
+	/** derives a stable island id from `${moduleUrl}:${exportName}`. defaults to `boring` */
+	hash?: (input: string) => string;
 
-const USED_ISLANDS = Symbol.for("aether.used-islands");
-const ISLAND_META_KEY = Symbol.for("aether.island-meta");
-
-let idHash: (input: string) => string = boring;
-
-export function configureIslandHash(hash: (input: string) => string): void {
-	idHash = hash;
+	/**
+	 * when `true`, re-registering an island under an already-known id
+	 * replaces its component/module in place instead of throwing */
+	hmr?: boolean;
 }
 
-export function generateIslandId(moduleUrl: string, exportName: string): string {
-	return idHash(`${moduleUrl}:${exportName}`);
-}
+export class IslandRegistry {
+	#entries = new Map<string, CachedIsland>();
+	#hash: (input: string) => string;
+	#hmr: boolean;
 
-export function registerIslandComponent(
-	Component: (props: Record<string, unknown>) => JSX.Node,
-	moduleUrl: string,
-	exportName = "default",
-	id: string = generateIslandId(moduleUrl, exportName),
-): IslandMeta {
-	const existing = REGISTRY.get(id);
-
-	if (existing && Deno.env.get("ENV") !== "production") {
-		existing.meta.Component = Component as any;
-		existing.meta.moduleUrl = moduleUrl;
-		if ((Component as any)[ISLAND_META_KEY]) {
-			(Component as any)[ISLAND_META_KEY] = existing;
-		}
-		return existing.meta;
+	constructor(options: IslandRegistryOptions = {}) {
+		this.#hash = options.hash ?? boring;
+		this.#hmr = options.hmr ?? false;
 	}
 
-	if (existing) {
-		if (existing.meta.Component !== Component || existing.meta.moduleUrl !== moduleUrl) {
-			throw new Error(
-				`aether: island id "${id}" is already registered from a different component/module`,
-			);
-		}
-		return existing.meta;
+	generateId(moduleUrl: string, exportName: string): string {
+		return this.#hash(`${moduleUrl}:${exportName}`);
 	}
 
-	const meta: IslandMeta = { id, moduleUrl, exportName, Component: Component as any };
+	register(
+		Component: (props: Record<string, unknown>) => unknown,
+		moduleUrl: string,
+		exportName = "default",
+		id: string = this.generateId(moduleUrl, exportName),
+	): IslandMeta {
+		const existing = this.#entries.get(id);
 
-	Object.defineProperty(Component, ISLAND_META_KEY, {
-		value: meta,
-		enumerable: false,
-		configurable: true,
-	});
-	return REGISTRY.set(id, { meta }), meta;
-}
+		if (existing) {
+			if (this.#hmr) {
+				existing.meta.Component = Component as any;
+				existing.meta.moduleUrl = moduleUrl;
+				if ((Component as any)[ISLAND_META_KEY]) {
+					(Component as any)[ISLAND_META_KEY] = existing.meta;
+				}
+				return existing.meta;
+			}
+			if (existing.meta.Component !== Component || existing.meta.moduleUrl !== moduleUrl) {
+				throw new Error(
+					`aether: island id "${id}" is already registered from a different component/module`,
+				);
+			}
+			return existing.meta;
+		}
 
-export function getIslandMeta(value: unknown): IslandMeta | undefined {
-	return typeof value === "function" ? (value as any)[ISLAND_META_KEY] : undefined;
-}
+		const meta: IslandMeta = { id, moduleUrl, exportName, Component: Component as any };
+		Object.defineProperty(Component, ISLAND_META_KEY, {
+			value: meta,
+			enumerable: false,
+			configurable: true,
+		});
+		this.#entries.set(id, { meta });
+		return meta;
+	}
 
-export function getIslandMetaById(id: string): IslandMeta | undefined {
-	return REGISTRY.get(id)?.meta;
-}
+	getMeta(value: unknown): IslandMeta | undefined {
+		return typeof value === "function" ? (value as any)[ISLAND_META_KEY] : undefined;
+	}
 
-export function getIslandModuleUrl(id: string): string | undefined {
-	return REGISTRY.get(id)?.meta?.moduleUrl;
-}
+	getMetaById(id: string): IslandMeta | undefined {
+		return this.#entries.get(id)?.meta;
+	}
 
-export function getIslandExportName(id: string): string {
-	return REGISTRY.get(id)?.meta?.exportName ?? "default";
+	getModuleUrl(id: string): string | undefined {
+		return this.#entries.get(id)?.meta.moduleUrl;
+	}
+
+	getExportName(id: string): string {
+		return this.#entries.get(id)?.meta.exportName ?? "default";
+	}
 }
 
 export function markIslandUsed(id: string): void {
 	const ctx = getContext();
 	if (!ctx) return;
-
-	let used = ctx.state.get(USED_ISLANDS) as Set<string> | undefined;
-	if (!used) {
-		used = new Set();
-		ctx.state.set(USED_ISLANDS, used);
-	}
-
+	const used = ctx.state.getOrInsertComputed(USED_ISLANDS, () => new Set()) as Set<string>;
 	used.add(id);
 }
 
@@ -102,6 +108,13 @@ export function getUsedIslands(
 	ctx?: { state?: Map<string | symbol, unknown> },
 ): ReadonlySet<string> | undefined {
 	const target = ctx ?? getContext();
-	if (!target?.state) return undefined;
-	return target.state.get(USED_ISLANDS) as ReadonlySet<string> | undefined;
+	return target?.state?.get(USED_ISLANDS) as ReadonlySet<string> | undefined;
+}
+
+export function setActiveIslandRegistry(registry: IslandRegistry): void {
+	getContext()?.state.set(ISLAND_REGISTRY, registry);
+}
+
+export function getActiveIslandRegistry(): IslandRegistry | undefined {
+	return getContext()?.state.get(ISLAND_REGISTRY) as IslandRegistry | undefined;
 }

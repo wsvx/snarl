@@ -6,7 +6,7 @@
 
 import { boring } from "@404/imouto";
 import { fromFileUrl } from "@std/path";
-import { getIslandExportName, getIslandModuleUrl } from "./registry.ts";
+import type { IslandRegistry } from "./registry.ts";
 
 import type { BuildOptions, Plugin } from "esbuild";
 
@@ -118,12 +118,13 @@ function aetherResolver(): Plugin {
 
 export async function bundleIslands(
 	names: readonly string[],
+	registry: IslandRegistry,
 	options: AetherServeOptions,
 ): Promise<string> {
 	const { default: esbuild } = await import("esbuild");
 	const { denoPlugin } = await import("@deno/esbuild-plugin");
 
-	const source = buildEntrySource(names);
+	const source = buildEntrySource(names, registry);
 
 	const result = await esbuild.build({
 		...options.esbuild,
@@ -152,14 +153,14 @@ export async function bundleIslands(
 	return result.outputFiles![0].text;
 }
 
-function buildEntrySource(names: readonly string[]): string {
+function buildEntrySource(names: readonly string[], registry: IslandRegistry): string {
 	const lines = [`import { registerIsland, hydrate } from "@404/aether/client";`];
 
 	names.forEach((name, i) => {
-		const specifier = getIslandModuleUrl(name);
+		const specifier = registry.getModuleUrl(name);
 		if (!specifier) throw new Error(`aether: no island registered under name "${name}"`);
 
-		const exportName = getIslandExportName(name);
+		const exportName = registry.getExportName(name);
 
 		const url = new URL(specifier);
 		const path = url.protocol === "file:" ? fromFileUrl(url) : url.href;
