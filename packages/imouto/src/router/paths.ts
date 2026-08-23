@@ -10,6 +10,7 @@ import type { RootRouteMetadata } from "./types.ts";
 /** converts a filesystem path to a route path */
 export function makeRoutePath(input: string): string {
 	const path = input
+		.replace(/\\/g, "/")
 		.replace(/\.tsx?$/, "")
 		.replace(/(^|\/)mod$/, "")
 		.replace(/\[\.\.\.(\w+)\]/g, ":$1*")
