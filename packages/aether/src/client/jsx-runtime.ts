@@ -188,7 +188,11 @@ function isEventKey(key: string): boolean {
 
 function applyAttribute(el: HTMLElement | SVGElement, key: string, value: unknown): void {
 	if (key === "class") {
-		return void ((el as HTMLElement).className = value == null ? "" : String(value));
+		const className = value == null ? "" : String(value);
+		if (el instanceof SVGElement) {
+			return void el.setAttribute("class", className);
+		}
+		return void (el.className = className);
 	}
 	if (key === "style") return applyStyle(el, value);
 
