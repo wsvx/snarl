@@ -130,7 +130,7 @@ export async function discoverAndRegisterIslands(
 		return;
 	}
 
-	log.warn("aether/discover", cyan(bold("\n  · discovering islands:")));
+	log.info("aether/discover", cyan(bold("\n  · discovering islands:")));
 
 	const seen = new Set<string>();
 	const queue = [...expandedFiles];
