@@ -119,33 +119,43 @@ export const renderToString = snarl.renderToString;
 
 type MaybeReactive<T> = T | Signal<T> | Computed<T>;
 
-export type ReactiveExtensions<T> =
-	& {
-		[K in keyof T]: T[K] | ReactiveOverrides[K & keyof ReactiveOverrides];
-	}
-	& ReactiveOverrides;
-
-export type ReactiveOverrides = {
-	style?: MaybeReactive<string> | snarl.CSSProperties | MaybeReactive<snarl.CSSProperties>;
-	class?: MaybeReactive<string>;
-	href?: MaybeReactive<string>;
-
-	disabled?: MaybeReactive<boolean>;
-	value?: MaybeReactive<string>;
-	checked?: MaybeReactive<boolean>;
-
-	[key: `data-${string}`]: MaybeReactive<string | number | boolean | null | undefined>;
-	[key: `aria-${string}`]: MaybeReactive<string | number | boolean | null | undefined>;
-
-	// deno-lint-ignore ban-types
-	[key: `on${string}`]: EventListener | ((e: any) => void) | string | Function;
-
-	// deno-lint-ignore ban-types
-	[key: `on:${string}`]: EventListener | ((e: any) => void) | string | Function;
-
-	[key: `bind:${string}`]: Signal<any> | any;
-	[key: `class:${string}`]: MaybeReactive<boolean>;
+export type ReactiveExtensions<T> = {
+	[K in keyof T]: T[K] extends snarl.HTMLAttributeMap<infer ElementType>
+		? T[K] | ReactiveOverrides<ElementType>
+		: T[K] | ReactiveOverrides<HTMLElement>;
 };
+
+type DynamicEventHandlers<TargetElement> =
+	& {
+		[K in keyof HTMLElementEventMap as `on:${K}`]?: (
+			this: TargetElement,
+			event: HTMLElementEventMap[K] & { currentTarget: TargetElement },
+		) => void;
+	}
+	& {
+		[K in keyof HTMLElementEventMap as `on${K}`]?: (
+			this: TargetElement,
+			event: HTMLElementEventMap[K] & { currentTarget: TargetElement },
+		) => void;
+	};
+
+export type ReactiveOverrides<TargetElement = HTMLElement> =
+	& DynamicEventHandlers<TargetElement>
+	& {
+		style?: MaybeReactive<string> | snarl.CSSProperties | MaybeReactive<snarl.CSSProperties>;
+		class?: MaybeReactive<string>;
+		href?: MaybeReactive<string>;
+
+		disabled?: MaybeReactive<boolean>;
+		value?: MaybeReactive<string>;
+		checked?: MaybeReactive<boolean>;
+
+		[key: `data-${string}`]: MaybeReactive<string | number | boolean | null | undefined>;
+		[key: `aria-${string}`]: MaybeReactive<string | number | boolean | null | undefined>;
+
+		[key: `bind:${string}`]: Signal<any> | any;
+		[key: `class:${string}`]: MaybeReactive<boolean>;
+	};
 
 export declare namespace JSX {
 	export type Element = snarl.JSX.Element;

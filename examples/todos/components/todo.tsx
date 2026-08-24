@@ -125,7 +125,7 @@ export default function Todos() {
 								checked={todo.done}
 								on:change={() => toggleTodo(todo)}
 							/>
-							<label onClick={() => toggleTodo(todo)}>{todo.text}</label>
+							<label on:click={() => toggleTodo(todo)}>{todo.text}</label>
 							<button type="button" class="delete-btn" onClick={() => deleteTodo(todo.id)}>
 								✕
 							</button>
