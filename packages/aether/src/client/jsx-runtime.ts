@@ -197,10 +197,13 @@ function applyAttribute(el: HTMLElement | SVGElement, key: string, value: unknow
 		else el.href = String(value);
 		return;
 	}
+
 	if (isEventKey(key)) {
-		if (typeof value === "function" || typeof value === "string") {
-			const eventName = key.startsWith("on:") ? key.slice(3) : key.slice(2).toLowerCase();
-			el.addEventListener(eventName, value as EventListener);
+		const nativeEventName = key.startsWith("on:") ? key.slice(3) : key.slice(2).toLowerCase();
+		if (typeof value === "function") {
+			el.addEventListener(nativeEventName, value as EventListener);
+		} else if (typeof value === "string") {
+			el.setAttribute("on" + nativeEventName, value);
 		}
 		return;
 	}

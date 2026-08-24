@@ -135,6 +135,14 @@ export function jsxEscape(value: unknown): string | Promise<string> {
 	return String(value);
 }
 
+function eventAttributeNativeName(key: string): string | null {
+	if (key.startsWith("on:")) return "on" + key.slice(3);
+	if (key.length > 2 && key.startsWith("on") && key[2] === key[2].toUpperCase()) {
+		return key.toLowerCase();
+	}
+	return null;
+}
+
 export function jsxAttr(k: string, v: unknown): string {
 	if (v == null || v === false) return "";
 	if (typeof v === "function") return "";
@@ -149,6 +157,11 @@ export function jsxAttr(k: string, v: unknown): string {
 	if (k === "style" && typeof v === "object" && v != null && !Array.isArray(v)) {
 		const css = renderStyle(v as Record<string, string | number>);
 		return css ? `style="${css}"` : "";
+	}
+
+	const nativeEventName = eventAttributeNativeName(k);
+	if (nativeEventName) {
+		return typeof v === "string" ? `${nativeEventName}="${encode(v)}"` : "";
 	}
 
 	return `${k}="${encode(String(v))}"`;
@@ -280,7 +293,7 @@ function renderJsx(element: JSX.Element): string | Promise<string> {
 
 	let html = `<${tag}`;
 	for (const name in props) {
-		if (name === "children" || name === "dangerouslySetInnerHTML") continue;
+		if (name === "children" || name === "dangerouslySetInnerHTML" || name === "key") continue;
 
 		if (Object.prototype.hasOwnProperty.call(props, name)) {
 			html += " " + jsxAttr(name, props[name]);
