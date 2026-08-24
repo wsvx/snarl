@@ -58,6 +58,7 @@ export function computed<T>(getter: (previousValue?: T) => T): Computed<T> {
 
 	accessor.peek = () => untracked(() => readComputed(node));
 	accessor.map = (fn) => computed(() => fn(readComputed(node)));
+	accessor.is = (value) => computed(() => readComputed(node) === value);
 
 	accessor[Symbol.toPrimitive] = (hint: string) => {
 		const v = readComputed(node);

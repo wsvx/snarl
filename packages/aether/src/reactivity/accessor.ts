@@ -28,6 +28,11 @@ export interface ReactiveAccessor<T> {
 	peek(): T;
 
 	/**
+	 * shorthand for `.map(v => v === value)`
+	 */
+	is(value: T): Computed<boolean>;
+
+	/**
 	 * Allows implicit or explicit type coercion to a primitive value outside of JSX contexts.
 	 * This is *not* a it is NOT a substitute for `.map()` when embedding a derived/comparison
 	 * value directly in JSX.

@@ -72,6 +72,7 @@ export function signal<T>(initialValue?: T): Signal<T | undefined> {
 
 	accessor.update = (fn) => writeSignal(node, fn(node.currentValue));
 	accessor.map = (fn) => computed(() => fn(readSignal(node)));
+	accessor.is = (value) => computed(() => readSignal(node) === value);
 
 	accessor.set = (v) => accessor(v);
 
