@@ -85,28 +85,28 @@ function jsx<P extends JSX.Props = JSX.Props>(
 
 	const rendered = maybeRenderIsland(tag, props);
 	if (rendered) return rendered;
+
 	if (props == null) return snarl.jsx(tag, props);
 
 	const out: Record<string, unknown> = {};
 	const classToggles: string[] = [];
 	const groupState = { value: undefined as unknown, hasBind: false };
 
-	for (const key of Object.keys(props)) {
-		const value = unwrapReactive(props[key]);
-
-		if (key.startsWith("bind:")) {
-			handleBinding(key.slice(5), value, out, groupState);
-		} else if (key.startsWith("class:")) {
-			if (value) classToggles.push(key.slice(6));
+	for (const prop of Object.keys(props)) {
+		const value = unwrapReactive(props[prop]);
+		if (prop.startsWith("bind:")) {
+			handleBinding(prop.slice(5), value, out, groupState);
+		} else if (prop.startsWith("class:")) {
+			if (value) classToggles.push(prop.slice(6));
 		} else {
-			out[key] = value;
+			out[prop] = value;
 		}
 	}
 
 	finaliseGroupBinding(groupState, out);
 	finaliseClasses(classToggles, out);
 
-	return snarl.jsx(tag, out);
+	return snarl.jsx(tag, out, key);
 }
 
 export const Fragment = snarl.Fragment as snarl.JSX.Fragment;
