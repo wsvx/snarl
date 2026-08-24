@@ -160,6 +160,9 @@ export async function analyseIslandSource(
 				const pathName = node.name.name?.name;
 				if (namespace && pathName) {
 					name = `${namespace}:${pathName}`;
+					if (namespace === "bind") {
+						eventHandlers.add(name);
+					}
 				}
 			}
 
