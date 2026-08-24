@@ -9,6 +9,7 @@ import { fromFileUrl } from "@std/path";
 import type { IslandRegistry } from "./registry.ts";
 
 import type { BuildOptions, Plugin } from "esbuild";
+import { log } from "@july/snarl/verbosity";
 
 export interface AetherServeOptions {
 	/** in-memory cache for bundled islands. defaults to a shared `Map` */
@@ -51,8 +52,8 @@ const KNOWN_EXPORTS: Record<string, string | (() => never) | undefined> = {
 			'use "@404/aether" or "@404/aether/client" instead',
 		);
 	},
-	"@july/snarl/jsx-runtime": "client/jsx.ts",
-	"@july/snarl/jsx-dev-runtime": "client/jsx.ts",
+	"@july/snarl/jsx-runtime": "client/jsx-runtime.ts",
+	"@july/snarl/jsx-dev-runtime": "client/jsx-runtime.ts",
 	"@404/imouto": () => {
 		throw new UnsupportedExportError("@404/imouto");
 	},
@@ -108,7 +109,11 @@ function aetherResolver(): Plugin {
 						namespace: spec.namespace,
 						external: false,
 					};
-				} catch {
+				} catch (err) {
+					log.warn(
+						"aether/bundler",
+						`couldn't resolve "${args.path}" to a real path, leaving external: ${err}`,
+					);
 					return { path: args.path, external: true };
 				}
 			});
