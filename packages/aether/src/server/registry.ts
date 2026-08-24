@@ -57,9 +57,11 @@ export class IslandRegistry {
 			if (this.#hmr) {
 				existing.meta.Component = Component as any;
 				existing.meta.moduleUrl = moduleUrl;
-				if ((Component as any)[ISLAND_META_KEY]) {
-					(Component as any)[ISLAND_META_KEY] = existing.meta;
-				}
+				Object.defineProperty(Component, ISLAND_META_KEY, {
+					value: existing.meta,
+					enumerable: false,
+					configurable: true,
+				});
 				return existing.meta;
 			}
 			if (existing.meta.Component !== Component || existing.meta.moduleUrl !== moduleUrl) {
