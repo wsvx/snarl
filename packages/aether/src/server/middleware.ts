@@ -28,7 +28,7 @@ import { boring } from "@404/imouto";
 import { injectIntoBody } from "@404/varnish";
 
 const CACHE_CONTROL_IMMUTABLE = "public, max-age=31536000, immutable";
-const ENTRY_ROUTE_RE = /^\/_aether\/entry\/([A-Za-z0-9_-]+)\.([0-9a-z]+)\.js$/;
+const ENTRY_ROUTE_RE = /^\/_aether\/entry\/([A-Za-z0-9_,-]+)\.([0-9a-z]+)\.js$/;
 
 export interface AetherOptions extends AetherServeOptions {
 	entrypoints?: string[];
@@ -123,6 +123,13 @@ export function aether(options: AetherOptions = {}): Middleware {
 	return async (ctx, next) => {
 		setActiveIslandRegistry(registry);
 		const match = ctx.url.pathname.match(ENTRY_ROUTE_RE);
+
+		if (ctx.url.pathname.startsWith("/_aether/entry/") && !match) {
+			return new Response("// aether: malformed island entry URL", {
+				status: 400,
+				headers: { "Content-Type": "application/javascript; charset=utf-8" },
+			});
+		}
 
 		if (match) {
 			const [, encodedNames, requestedHash] = match;
