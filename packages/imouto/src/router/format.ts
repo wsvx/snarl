@@ -20,7 +20,10 @@ const METHOD_COLOURS: Record<Method, typeof dim> = {
 export const methodColour = (method: Method) => METHOD_COLOURS[method] ?? dim;
 
 export function formatRoute(method: Method, path: string): string {
-	return `${methodColour(method)(method.padEnd(7))} ${dim("→")} ${cyan(path)}`;
+	const isLarge = method === "OPTIONS" || method === "DELETE";
+	const padding = isLarge ? 7 : 5;
+	const out = `${methodColour(method)(method.padEnd(padding))} ${dim("→")} ${cyan(path)}`;
+	return `${isLarge ? "\n" : ""}${out}${isLarge ? "\n" : ""}`;
 }
 
 export const formatRouteFile = (path: string): string => dim(`(${path})`);
