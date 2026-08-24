@@ -29,6 +29,8 @@ export interface StaticFilesOptions {
 	strongEtagThreshold?: number;
 	/** custom content-type overrides extending or replacing `@std/media-types` */
 	customContentTypes?: CustomContentTypes;
+	/** URL path to mount under. files are served at `${prefix}/...`. defaults to root mount ("/"). */
+	prefix?: string;
 }
 
 function resolveContentType(
@@ -92,7 +94,7 @@ function parseRangeHeader(
 }
 
 /**
- * serves static files from a directory, streaming from disk rather than
+ * Serves static files from a directory, streaming from disk rather than
  * buffering into memory.
  *
  * @example
@@ -111,20 +113,37 @@ export function staticFiles(root: string, options: StaticFilesOptions = {}): Mid
 		maxRangeLength = 128 * 1024 * 1024,
 		strongEtagThreshold = 1024 * 1024,
 		customContentTypes,
+		prefix = "",
 	} = options;
 
 	const etagMode = etagOption === false ? false : etagOption === true ? "weak" : etagOption;
 	root = resolve(Deno.cwd(), root);
+
+	let mount = prefix;
+	if (mount && !mount.startsWith("/")) mount = `/${mount}`;
+	if (mount.endsWith("/")) mount = mount.slice(0, -1);
 
 	return async (ctx, next) => {
 		if (ctx.request.method !== "GET" && ctx.request.method !== "HEAD") {
 			return next();
 		}
 
-		const decodedPath = decodeURIComponent(ctx.url.pathname);
-		let filepath = resolve(root, decodedPath.slice(1));
+		const pathname = decodeURIComponent(ctx.url.pathname);
+		let rel: string;
+		if (mount === "") {
+			rel = pathname.slice(1);
+		} else if (pathname === mount) {
+			rel = "";
+		} else if (pathname.startsWith(`${mount}/`)) {
+			rel = pathname.slice(mount.length + 1);
+		} else {
+			return next();
+		}
+
+		let filepath = resolve(root, rel);
 
 		const relativePath = relative(root, filepath);
+
 		if (
 			relativePath === ".." || relativePath.startsWith(`..${SEPARATOR}`) || isAbsolute(relativePath)
 		) {
