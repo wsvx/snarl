@@ -99,9 +99,7 @@ const isRootTag = (tag: string): boolean => ROOT_TAGS.has(tag);
 const rootScopeKey = (scope: string): string => `${scope}__root`;
 
 function interpolate(strings: TemplateStringsArray, values: unknown[]): string {
-	let out = strings[0];
-	for (let i = 0; i < values.length; i++) out += String(values[i] ?? "") + strings[i + 1];
-	return out.trim();
+	return strings.reduce<string>((acc, str, i) => acc + str + (values[i] ?? ""), "").trim();
 }
 
 function registerScope(scope: string, source: string, onCollision: CssCollisionPolicy): void {
@@ -118,14 +116,12 @@ function registerScope(scope: string, source: string, onCollision: CssCollisionP
 }
 
 function createComponent(tag: string, scope: string, registryKey: string): ScopedComponent {
-	const root = isRootTag(tag);
-
 	return function TagComponent(props: Record<string, unknown> = {}) {
 		const ctx = getContext();
 		if (ctx) markStyleUsed(ctx, registryKey);
 
 		const { class: className, ...rest } = props;
-		const appliedScope = root ? undefined : scope;
+		const appliedScope = isRootTag(tag) ? undefined : scope;
 		return jsx(tag, {
 			...rest,
 			class: appliedScope ? (className ? `${appliedScope} ${className}` : appliedScope) : className,

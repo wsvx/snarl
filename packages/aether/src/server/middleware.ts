@@ -25,7 +25,7 @@ import {
 } from "./registry.ts";
 import { log } from "@july/snarl/verbosity";
 import { boring } from "@404/imouto";
-import { HtmlInjector } from "@404/varnish";
+import { injectIntoBody } from "@404/varnish";
 
 const CACHE_CONTROL_IMMUTABLE = "public, max-age=31536000, immutable";
 const ENTRY_ROUTE_RE = /^\/_aether\/entry\/([A-Za-z0-9_-]+)\.([0-9a-z]+)\.js$/;
@@ -105,9 +105,8 @@ async function injectIslandScript(
 	}
 
 	const src = `/_aether/entry/${encodeEntryKey(names)}.${hash}.js`;
-	return response.pipeThrough(
-		new HtmlInjector({ body: `<script type="module" src="${src}"></script>` }),
-	);
+	injectIntoBody(ctx, `<script type="module" src="${src}"></script>`);
+	return response;
 }
 
 export function aether(options: AetherOptions = {}): Middleware {
