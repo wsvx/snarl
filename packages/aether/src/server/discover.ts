@@ -11,6 +11,7 @@ import { walk as fsWalk } from "@std/fs";
 import { bold, cyan, dim } from "@std/fmt/colors";
 import { log } from "@july/snarl/verbosity";
 import { extname } from "@std/path";
+import { loadImportMap, resolveThroughImportMap } from "./import-map.ts";
 
 const LOADER_MAP: Record<string, "ts" | "tsx" | "js" | "jsx"> = {
 	".ts": "ts",
@@ -72,8 +73,17 @@ export function hasComponentExport(ast: AstNode): boolean {
 }
 
 async function resolveImport(fromFile: string, spec: string): Promise<string | null> {
-	if (!spec.startsWith("./") && !spec.startsWith("../")) return null;
-	const base = resolve(dirname(fromFile), spec);
+	let base: string;
+
+	if (spec.startsWith("./") || spec.startsWith("../")) {
+		base = resolve(dirname(fromFile), spec);
+	} else {
+		const map = await loadImportMap();
+		const mapped = map ? resolveThroughImportMap(map, spec) : null;
+		if (!mapped) return null;
+		base = mapped;
+	}
+
 	const candidates = [
 		base,
 		`${base}.tsx`,
@@ -173,9 +183,9 @@ export async function discoverAndRegisterIslands(
 				if (registered) {
 					const reason = analysis.reasons.join(", ");
 					const file = relative(Deno.cwd(), path);
-					log.success(
+					log.info(
 						"aether/discover",
-						`${dim(file)} ${dim(`(${reason})`)}`,
+						`↓ ${dim(file)} ${dim(`(${reason})`)}`,
 					);
 				}
 			} catch (err) {
